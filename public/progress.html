@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+<meta name="theme-color" content="#84d6ff">
+<title>Math Star — ההתקדמות שלי</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.kpi{background:#f6f9fc;border-radius:16px;padding:12px;text-align:center;font-weight:800;color:var(--muted)}
+.kpi b{display:block;font-size:30px;color:var(--ink)}
+.selfcheck td{vertical-align:middle}
+.selfcheck td.topic{width:48px;font-weight:900;color:var(--muted)}
+.selfcheck a{text-decoration:none;font-weight:800}
+.unit-row td{background:#f3f0ff;font-weight:900;color:var(--violet-dark)}
+@media(max-width:640px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.hide-sm{display:none}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <a class="pill-btn" href="index.html">→ העולם שלי</a>
+    <div class="hud" id="hud"></div>
+  </div>
+  <div id="app"></div>
+</main>
+
+<script type="module">
+import { GRADES, gradeInfo, coreSkills, accuracy, stars, playerLevel, UNITS, SKILL_BY_ID } from './js/engine.js';
+import { save, updateProfile, removeProfile, exportBackup, importBackup } from './js/store.js';
+import { $, esc, hudHTML, toast, requireProfile } from './js/ui.js';
+
+const ctx = requireProfile();
+const { profile, kid, state, persist } = ctx;
+$('#hud').innerHTML = hudHTML(profile, kid);
+
+function status(st) {
+  if (!st || st.seen < 3) return ['עוד לא תרגלנו', 'lvl-none', '·'];
+  const a = accuracy(st, 10);
+  if (stars(st) >= 2 && a >= 0.8) return ['שולטת', 'lvl-good', '✅'];
+  if (a >= 0.6 || stars(st) >= 1) return ['כמעט', 'lvl-mid', '🟡'];
+  return ['צריכה עוד תרגול', 'lvl-low', '🔁'];
+}
+
+function render() {
+  const g = gradeInfo(profile.grade);
+  const core = coreSkills(profile.grade);
+  const acc = kid.answered ? Math.round((kid.correct / kid.answered) * 100) : 0;
+  const units = UNITS[profile.grade];
+  const rows = (list) => list.map((s) => {
+    const st = kid.skills[s.id]; const [label, cls, icon] = status(st); const a = accuracy(st, 10);
+    return `<tr>
+      ${units ? `<td class="topic ltr">${s.topic}</td>` : ''}
+      <td><a href="practice.html?skill=${s.id}">${s.emoji} ${esc(s.title)}</a></td>
+      <td class="hide-sm" style="width:120px"><div class="bar"><i style="width:${a === null ? 0 : Math.round(a * 100)}%"></i></div></td>
+      <td class="hide-sm ltr" style="text-align:center">${'★'.repeat(stars(st))}${'☆'.repeat(3 - stars(st))}</td>
+      <td class="lvl ${cls}">${icon} ${label}</td></tr>`;
+  }).join('');
+  const table = units
+    ? units.filter((u) => u.id !== 'x').map((u) => `<tr class="unit-row"><td colspan="5">${esc(u.title)}</td></tr>` + rows(core.filter((s) => s.unit === u.id))).join('')
+    : rows(core);
+  const exams = (kid.exams || []).slice(-6).reverse();
+
+  $('#app').innerHTML = `
+    <section class="banner" style="background:linear-gradient(135deg,${g.color},#a986ff)">
+      <span class="kicker">📈 ההתקדמות של ${esc(profile.name)}</span>
+      <h1>${esc(profile.avatar)} רמה ${playerLevel(kid.xp)}</h1>
+      <p>${esc(g.label)} · ${kid.answered} תרגילים · ${kid.streak || 0} ימים ברצף</p>
+      <div class="deco">%</div>
+    </section>
+
+    <section class="panel">
+      <div class="kpis">
+        <div class="kpi"><b>${kid.xp}</b>⭐ נקודות</div>
+        <div class="kpi"><b>${kid.gems}</b>💎 יהלומים</div>
+        <div class="kpi"><b class="ltr">${acc}%</b>🎯 נכון בניסיון ראשון</div>
+        <div class="kpi"><b>${kid.review.length}</b>🔁 לחזרה</div>
+      </div>
+      ${kid.review.length ? `<div class="row" style="margin-top:12px"><a class="btn" href="practice.html?mode=review">לתרגל את ${kid.review.length} התרגילים לחזרה ←</a></div>` : ''}
+    </section>
+
+    <section class="panel">
+      <h2>✔️ איך הצלחתי?</h2>
+      <p class="sub">${units ? 'לפי הנושאים של חוברת החזרה. ' : ''}מתעדכן לבד מהתשובות. "שולטת" = לפחות 2 כוכבים ו-80% נכון ב-10 התשובות האחרונות.</p>
+      <table class="t selfcheck"><tbody>${table}</tbody></table>
+    </section>
+
+    ${exams.length ? `<section class="panel"><h2>📝 מבחני תרגול</h2>
+      <table class="t"><thead><tr><th>תאריך</th><th>ציון</th><th class="hide-sm">נושאים לחיזוק</th></tr></thead><tbody>
+      ${exams.map((e) => { const weak = [...new Set(e.items.filter((i) => !i.ok).map((i) => SKILL_BY_ID[i.skill]?.title).filter(Boolean))];
+        return `<tr><td>${new Date(e.at).toLocaleDateString('he-IL')}</td><td class="ltr"><b>${Math.round((e.score / e.total) * 100)}</b> (${e.score}/${e.total})</td><td class="hide-sm">${weak.length ? esc(weak.join(' · ')) : '🎉 הכול נכון'}</td></tr>`; }).join('')}
+      </tbody></table></section>` : ''}
+
+    <section class="panel">
+      <h2>⚙️ הגדרות (להורים)</h2>
+      <label class="f" for="nm">שם</label>
+      <input class="f" id="nm" maxlength="24" value="${esc(profile.name)}">
+      <label class="f" for="gr">כיתה</label>
+      <select class="f" id="gr">${GRADES.map((x) => `<option value="${x.id}" ${x.id === profile.grade ? 'selected' : ''}>${x.label}</option>`).join('')}</select>
+      <div class="row" style="margin-top:14px"><button class="btn green" id="saveP" type="button">שמירה</button></div>
+      <p class="note" style="margin-top:16px">ההתקדמות נשמרת במכשיר הזה (בדפדפן). כדי להעביר למכשיר אחר — הורידו גיבוי וטענו אותו שם.</p>
+      <div class="row" style="margin-top:10px">
+        <button class="btn ghost" id="exp" type="button">⬇️ הורדת גיבוי</button>
+        <label class="btn ghost" style="cursor:pointer">⬆️ טעינת גיבוי<input type="file" id="imp" accept="application/json,.json" hidden></label>
+        <button class="btn red" id="del" type="button">מחיקת הפרופיל</button>
+      </div>
+    </section>`;
+
+  $('#saveP').onclick = () => {
+    const name = $('#nm').value.trim();
+    if (!name) return $('#nm').focus();
+    updateProfile(state, profile.id, { name, grade: $('#gr').value }); persist();
+    toast('✅ נשמר'); $('#hud').innerHTML = hudHTML(profile, kid); render();
+  };
+  $('#exp').onclick = () => {
+    const blob = new Blob([exportBackup(state)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `math-star-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+  $('#imp').onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const next = importBackup(await f.text());
+      if (!confirm('לטעון את הגיבוי? ההתקדמות הנוכחית במכשיר הזה תוחלף.')) return;
+      save(next); location.href = 'index.html?pick=1';
+    } catch { toast('הקובץ הזה לא גיבוי של Math Star'); }
+  };
+  $('#del').onclick = () => {
+    if (!confirm(`למחוק את הפרופיל של ${profile.name} וכל ההתקדמות? אי אפשר לבטל.`)) return;
+    removeProfile(state, profile.id); persist(); location.href = 'index.html?pick=1';
+  };
+}
+render();
+</script>
+</body>
+</html>

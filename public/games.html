@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+<meta name="theme-color" content="#84d6ff">
+<title>Math Star — משחקים</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+.games{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.game{border:0;text-align:start;border-radius:22px;padding:18px;color:#fff;box-shadow:0 6px 0 #0003;min-height:190px;display:flex;flex-direction:column;justify-content:space-between;gap:10px}
+.game .e{font-size:48px}.game h3{margin:0;font-size:26px}.game p{margin:0;font-weight:600;opacity:.95}
+.game.rush{background:linear-gradient(135deg,#ff9f43,#ff6b6b)}
+.game.tower{background:linear-gradient(135deg,#2f8fe0,#7b5cf0)}
+.game .best{font-weight:900;background:#ffffff30;border-radius:999px;padding:4px 10px;align-self:flex-start}
+.arena{display:grid;grid-template-columns:1fr 150px;gap:14px;align-items:start}
+.side{background:#ffffffd9;border-radius:22px;padding:12px;text-align:center;font-weight:900;box-shadow:0 5px 0 var(--shadow);position:sticky;top:10px}
+.big-num{font-size:44px;line-height:1}
+.timer{height:16px;border-radius:8px;background:#eef2f6;overflow:hidden;margin:8px 0}
+.timer i{display:block;height:100%;background:linear-gradient(90deg,#2fb35a,#ffd14c,#ef5b6e);transition:width 1s linear}
+.tower{display:flex;flex-direction:column-reverse;align-items:center;gap:3px;min-height:300px;padding:8px 0 0;border-bottom:8px solid #76c85b}
+.tower i{width:96px;height:24px;border-radius:5px;box-shadow:inset 0 -5px 0 #0003;animation:drop .35s ease-out}
+.tower.shake{animation:shake .4s}
+.goal{font-size:14px;color:var(--muted)}
+@keyframes drop{from{transform:translateY(-60px);opacity:0}}
+@media(max-width:700px){.games{grid-template-columns:1fr}.arena{grid-template-columns:1fr}.side{order:-1;position:static;display:flex;align-items:center;justify-content:space-around;gap:10px}.tower{min-height:0;flex-direction:row;flex-wrap:wrap;border-bottom:0;max-width:200px}.tower i{width:22px;height:22px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <a class="pill-btn" href="index.html">→ העולם שלי</a>
+    <div class="hud" id="hud"></div>
+  </div>
+  <div id="app"></div>
+</main>
+
+<script type="module">
+import { skillsForGrade, coreSkills, nextSkill, generate, SKILL_BY_ID } from './js/engine.js';
+import { recordAnswer, completeMission } from './js/store.js';
+import { $, esc, hudHTML, QuestionView, confetti, toast, requireProfile } from './js/ui.js';
+
+const { profile, kid, persist } = requireProfile();
+const params = new URLSearchParams(location.search);
+const mission = params.get('mission');
+const app = $('#app');
+const renderHud = () => ($('#hud').innerHTML = hudHTML(profile, kid));
+renderHud();
+kid.games = kid.games || {};
+
+const FAST = { K: 'k_add', 1: 'g1_add20', 2: 'g2_mult', 3: 'g3_times', 4: 'g3_times', 5: 'g3_times', 6: 'g3_times' };
+const gameSkills = () => {
+  const own = skillsForGrade(profile.grade).filter((s) => !s.extra);
+  const fast = SKILL_BY_ID[FAST[profile.grade]];
+  return own.some((s) => s.id === fast.id) ? own : [fast, ...own];
+};
+let chosen = FAST[profile.grade] || coreSkills(profile.grade)[0].id;
+
+function menu() {
+  app.innerHTML = `
+    <section class="banner" style="background:linear-gradient(135deg,#ff9f43,#7b5cf0)">
+      <span class="kicker">🎮 משחקים</span><h1>בואי נשחק!</h1><p>כל תשובה נכונה = ⭐ נקודות. משחק שלם משלים את משימת היום.</p><div class="deco">+ − × :</div>
+    </section>
+    <section class="panel">
+      <label class="f" for="sk">במה נתאמן?</label>
+      <select class="f" id="sk">${gameSkills().map((s) => `<option value="${s.id}" ${s.id === chosen ? 'selected' : ''}>${s.emoji} ${esc(s.title)}</option>`).join('')}</select>
+      <div class="games" style="margin-top:16px">
+        <button class="game rush" data-g="rush"><span class="e">⏱️</span><div><h3>מרוץ מספרים</h3><p>כמה תרגילים תספיקי ב-60 שניות?</p></div><span class="best">שיא: ${kid.games.rush?.[chosen] || 0}</span></button>
+        <button class="game tower" data-g="tower"><span class="e">🏰</span><div><h3>מגדל הקוביות</h3><p>כל תשובה נכונה מוסיפה קובייה. בני מגדל של 10!</p></div><span class="best">מגדלים: ${kid.games.towers || 0}</span></button>
+      </div>
+    </section>`;
+  $('#sk').onchange = (e) => { chosen = e.target.value; menu(); };
+  app.querySelectorAll('[data-g]').forEach((b) => (b.onclick = () => (b.dataset.g === 'rush' ? rush() : tower())));
+}
+
+function arena(sideHTML) {
+  app.innerHTML = `<div class="arena"><div id="q"></div><aside class="side">${sideHTML}</aside></div>`;
+  return $('#q');
+}
+function level() { return kid.skills[chosen]?.level || 1; }
+function record(problem, correct) { recordAnswer(kid, problem, correct, 1); persist(); renderHud(); }
+
+// ---------- Number Rush ----------
+function rush() {
+  const SECS = 60; let left = SECS, score = 0, over = false;
+  const q = arena(`<div>⏱️ <span class="big-num" id="t">${SECS}</span></div><div class="timer"><i id="tb" style="width:100%"></i></div><div>נכונות</div><div class="big-num" id="s">0</div>`);
+  const view = QuestionView(q, { maxTries: 1, tag: '⏱️ מרוץ מספרים', onResult: ({ correct, problem }) => {
+    if (over) return;
+    record(problem, correct);
+    if (correct) { score++; $('#s').textContent = score; }
+    setTimeout(() => !over && view.show(generate(chosen, level())), correct ? 350 : 1300);
+  } });
+  view.show(generate(chosen, level()));
+  const timer = setInterval(() => {
+    left--; $('#t').textContent = left; $('#tb').style.width = (left / SECS) * 100 + '%';
+    if (left <= 0) { clearInterval(timer); over = true; view.destroy(); end(); }
+  }, 1000);
+  function end() {
+    kid.games.rush = kid.games.rush || {};
+    const best = kid.games.rush[chosen] || 0, isRecord = score > best;
+    if (isRecord) kid.games.rush[chosen] = score;
+    const md = mission ? completeMission(kid, 'game') : false; persist(); renderHud();
+    if (isRecord && score) confetti();
+    done(isRecord ? `🏆 שיא חדש: ${score}!` : `ענית נכון על ${score} תרגילים`, `השיא שלך: ${Math.max(best, score)}`, md);
+  }
+}
+
+// ---------- Block Tower ----------
+function tower() {
+  const GOAL = 10, colors = ['#ff9f43', '#ef5b6e', '#7b5cf0', '#2f8fe0', '#2fb35a', '#ffd14c', '#16b5a8', '#f15f8c'];
+  let h = 0;
+  const q = arena(`<div>🏰 <span class="big-num" id="h">0</span><span class="goal"> / ${GOAL}</span></div><div class="tower" id="tw"></div>`);
+  const view = QuestionView(q, { maxTries: 1, tag: '🏰 מגדל הקוביות', onResult: ({ correct, problem }) => {
+    record(problem, correct);
+    const tw = $('#tw');
+    if (correct) { h++; const b = document.createElement('i'); b.style.background = colors[h % colors.length]; tw.append(b); }
+    else if (h > 0) { h--; tw.lastElementChild?.remove(); tw.classList.remove('shake'); void tw.offsetWidth; tw.classList.add('shake'); toast('אופס! קובייה נפלה — ממשיכות 💪'); }
+    $('#h').textContent = h;
+    if (h >= GOAL) { view.destroy(); kid.games.towers = (kid.games.towers || 0) + 1; kid.gems += 3; const md = mission ? completeMission(kid, 'game') : false; persist(); renderHud(); confetti(); return setTimeout(() => done('🏰 בנית מגדל שלם!', '+3 💎 יהלומים', md), 900); }
+    setTimeout(() => view.show(generate(chosen, level())), correct ? 600 : 1500);
+  } });
+  view.show(generate(chosen, level()));
+}
+
+function done(title, sub, missionDone) {
+  app.innerHTML = `<div class="qcard summary"><div class="big">🎉</div><h2 style="margin:0;font-size:32px">${esc(title)}</h2><p class="sub">${esc(sub)}</p>${missionDone ? '<p class="ok-text">🎯 משימת המשחק הושלמה!</p>' : ''}
+    <div class="row" style="justify-content:center"><button class="btn green" id="again" type="button">עוד משחק 🔄</button><a class="btn ghost" href="index.html">חזרה לעולם</a></div></div>`;
+  $('#again').onclick = menu;
+}
+
+if (!coreSkills(profile.grade).some((s) => s.id === chosen) && !SKILL_BY_ID[chosen]) chosen = nextSkill(profile.grade, kid.skills);
+menu();
+</script>
+</body>
+</html>

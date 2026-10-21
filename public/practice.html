@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+<meta name="theme-color" content="#84d6ff">
+<title>Math Star — תרגול</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <a class="pill-btn" href="index.html">→ העולם שלי</a>
+    <div class="hud" id="hud"></div>
+  </div>
+  <div class="stage">
+    <div class="roundbar" id="bar" aria-hidden="true"></div>
+    <div id="q"></div>
+    <div class="row" style="justify-content:center;margin-top:14px">
+      <button class="btn blue hidden" id="next" type="button">הבא ←</button>
+    </div>
+  </div>
+</main>
+
+<script type="module">
+import { SKILL_BY_ID, coreSkills, generateRound, generate, shuffle, stars } from './js/engine.js';
+import { recordAnswer, finishRound, completeMission } from './js/store.js';
+import { $, esc, hudHTML, QuestionView, toast, confetti, requireProfile } from './js/ui.js';
+
+const ctx = requireProfile();
+const { profile, kid, persist } = ctx;
+const params = new URLSearchParams(location.search);
+const mode = params.get('mode') || (params.get('hw') ? 'homework' : 'skill');
+const mission = params.get('mission');
+const qEl = $('#q'), barEl = $('#bar'), nextBtn = $('#next');
+const renderHud = () => ($('#hud').innerHTML = hudHTML(profile, kid));
+renderHud();
+
+// ---------- build the round ----------
+let problems = [], tag = '', skillId = null;
+const exam = mode === 'exam';
+
+if (mode === 'review') {
+  problems = kid.review.slice(0, 10).map((p) => ({ ...p }));
+  tag = '🔁 חזרה חכמה';
+  if (!problems.length) {
+    qEl.innerHTML = `<div class="qcard"><div class="prompt">אין תרגילים לחזרה — כל הכבוד! 🎉</div><a class="btn" href="index.html">חזרה לעולם</a></div>`;
+    if (mission) { completeMission(kid, mission); persist(); }
+    throw new Error('empty review');
+  }
+} else if (exam) {
+  const list = coreSkills(profile.grade);
+  const order = profile.grade === '6' ? list : shuffle(Math.random, list);
+  const n = Math.max(12, Math.min(20, list.length + 4));
+  for (let i = 0; i < n; i++) {
+    const s = i < order.length ? order[i] : order[Math.floor(Math.random() * order.length)];
+    const lvl = Math.max(2, kid.skills[s.id]?.level || 1);
+    problems.push(generate(s.id, lvl));
+  }
+  if (profile.grade !== '6') problems = shuffle(Math.random, problems);
+  tag = '📝 מבחן תרגול';
+} else if (mode === 'homework') {
+  const set = kid.homework.find((h) => h.id === params.get('hw'));
+  if (!set) { location.replace('homework.html'); throw new Error('no set'); }
+  problems = set.items.map((p) => ({ ...p }));
+  tag = '📚 ' + set.title;
+} else {
+  skillId = SKILL_BY_ID[params.get('skill')] ? params.get('skill') : coreSkills(profile.grade)[0].id;
+  const s = SKILL_BY_ID[skillId];
+  const level = kid.skills[skillId]?.level || 1;
+  problems = generateRound(skillId, level, 10);
+  // Mix in up to 2 earlier mistakes from this skill.
+  const old = kid.review.filter((p) => p.skill === skillId).slice(0, 2);
+  old.forEach((p, i) => problems.splice(3 + i * 4, 1, { ...p }));
+  tag = `${s.emoji} ${s.title}`;
+}
+
+const results = [];
+let idx = 0, roundXp = 0;
+const view = QuestionView(qEl, { maxTries: exam ? 1 : 2, tag, onResult });
+
+function drawBar() {
+  barEl.innerHTML = problems.map((_, i) => {
+    const r = results[i];
+    const cls = i === idx && !r ? 'now' : !r ? '' : r.correct && r.tries === 1 ? 'ok' : r.correct ? 'half' : 'bad';
+    return `<span class="${cls}"></span>`;
+  }).join('');
+}
+
+function show() {
+  drawBar();
+  nextBtn.classList.add('hidden');
+  const p = problems[idx];
+  view.show(p);
+  const tagEl = qEl.querySelector('.tag'); if (tagEl) tagEl.textContent = `${tag} · ${idx + 1}/${problems.length}`;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function onResult({ correct, tries, problem }) {
+  const before = stars(kid.skills[problem.skill]);
+  const res = recordAnswer(kid, problem, correct, tries);
+  roundXp += res.xp;
+  results[idx] = { correct, tries, skill: problem.skill };
+  persist(); renderHud(); drawBar();
+  if (res.cleared && !exam) { toast(`⭐ כוכב חדש ב${SKILL_BY_ID[problem.skill].title}!`); confetti(40); }
+  else if (res.levelUp && !exam) toast(`🚀 עלית לשלב ${kid.skills[problem.skill].level}!`);
+  const last = idx === problems.length - 1;
+  nextBtn.textContent = last ? 'לסיכום ←' : correct ? 'הבא ←' : 'הבנתי, הבא ←';
+  nextBtn.classList.remove('hidden');
+  const token = idx;
+  if (correct) setTimeout(() => { if (idx === token && !nextBtn.classList.contains('hidden')) advance(); }, exam ? 600 : 1100);
+  else nextBtn.focus();
+}
+
+function advance() {
+  if (nextBtn.classList.contains('hidden')) return;
+  if (idx < problems.length - 1) { idx++; show(); } else summary();
+}
+nextBtn.onclick = advance;
+document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !nextBtn.classList.contains('hidden')) { e.preventDefault(); advance(); } });
+
+function summary() {
+  view.destroy();
+  nextBtn.classList.add('hidden');
+  const total = results.length, firstTry = results.filter((r) => r.correct && r.tries === 1).length;
+  const right = results.filter((r) => r.correct).length;
+  const gemsBefore = kid.gems;
+  finishRound(kid, { skill: skillId || mode, correct: firstTry, total, xp: roundXp });
+  let missionDone = false;
+  if (mission) missionDone = completeMission(kid, mission);
+  const gems = kid.gems - gemsBefore;
+  if (exam) {
+    kid.exams = kid.exams || [];
+    kid.exams.push({ at: Date.now(), score: right, total, items: results.map((r) => ({ skill: r.skill, ok: r.correct })) });
+    if (kid.exams.length > 20) kid.exams.shift();
+  }
+  persist(); renderHud();
+  const pct = total ? right / total : 0;
+  const emoji = pct === 1 ? '🏆' : pct >= 0.8 ? '🌟' : pct >= 0.6 ? '💪' : '🌱';
+  const title = pct === 1 ? 'מושלם!' : pct >= 0.8 ? 'מצוין!' : pct >= 0.6 ? 'יפה מאוד!' : 'ממשיכות להתאמן!';
+  if (pct >= 0.8) confetti();
+
+  let examHTML = '';
+  if (exam) {
+    const by = {};
+    results.forEach((r) => { const s = SKILL_BY_ID[r.skill]; if (!s) return; const k = s.id; (by[k] ||= { s, ok: 0, n: 0 }); by[k].n++; if (r.correct) by[k].ok++; });
+    const rows = Object.values(by);
+    const weak = rows.filter((x) => x.ok < x.n);
+    examHTML = `
+      <h3 style="margin:18px 0 8px">לפי נושא</h3>
+      <table class="t"><tbody>${rows.map((x) => `<tr><td>${x.s.topic && x.s.topic !== 'x' ? `<b class="ltr">${x.s.topic}</b> ` : ''}${esc(x.s.title)}</td><td class="ltr" style="text-align:end">${x.ok}/${x.n} ${x.ok === x.n ? '✅' : '🔁'}</td></tr>`).join('')}</tbody></table>
+      ${weak.length ? `<p class="note" style="margin-top:12px">כדאי לתרגל עוד: ${weak.map((x) => `<a href="practice.html?skill=${x.s.id}">${esc(x.s.title)}</a>`).join(' · ')}</p>` : ''}`;
+  }
+
+  qEl.innerHTML = `
+    <div class="qcard summary">
+      <div class="big">${emoji}</div>
+      <h2 style="margin:0;font-size:34px">${title}</h2>
+      <div class="stats">
+        <div class="stat"><b class="ltr">${right}/${total}</b>${exam ? 'ציון' : 'נכונות'}</div>
+        <div class="stat"><b>+${roundXp}</b>⭐ נקודות</div>
+        <div class="stat"><b>+${gems}</b>💎 יהלומים</div>
+      </div>
+      ${exam ? `<p class="sub">ציון: <b class="ltr">${Math.round(pct * 100)}</b></p>` : ''}
+      ${missionDone ? `<p class="ok-text">🎯 משימה הושלמה!</p>` : ''}
+      ${examHTML}
+      <div class="row" style="justify-content:center;margin-top:16px">
+        ${mode === 'review' && !kid.review.length ? '' : `<button class="btn green" type="button" onclick="location.reload()">${exam ? 'עוד מבחן' : 'עוד סיבוב'} 🔄</button>`}
+        <a class="btn ghost" href="index.html">חזרה לעולם</a>
+      </div>
+    </div>`;
+  drawBar();
+}
+
+show();
+</script>
+</body>
+</html>

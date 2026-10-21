@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+<meta name="theme-color" content="#84d6ff">
+<title>Math Star — שיעורי בית</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+.sets{display:grid;gap:10px}
+.set{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:14px;border-radius:16px;background:#f6f9fc;border:2px solid var(--line)}
+.set h3{margin:0;font-size:19px}.set small{color:var(--muted);font-weight:700}
+.preview{display:grid;gap:6px;margin-top:10px}
+.preview div{display:flex;justify-content:space-between;gap:10px;background:#f6f9fc;border-radius:12px;padding:8px 12px;font-weight:800}
+.preview .ans{color:var(--green-dark)}
+code{background:#fff;border-radius:6px;padding:2px 8px;direction:ltr;unicode-bidi:isolate;font-weight:800;color:var(--ink)}
+.ex{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:center;margin-top:8px}
+.ex span{font-weight:800}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <a class="pill-btn" href="index.html">→ העולם שלי</a>
+    <div class="hud" id="hud"></div>
+  </div>
+  <section class="banner" style="background:linear-gradient(135deg,#16b5a8,#2f8fe0)">
+    <span class="kicker">📚 שיעורי בית · להורים</span>
+    <h1>תרגילים מהדף של בית הספר</h1>
+    <p>מקלידים את התרגילים מהדף או מהחוברת, והם הופכים לסבב תרגול עם בדיקה אוטומטית.</p>
+    <div class="deco">✎</div>
+  </section>
+
+  <section class="panel" id="list"></section>
+
+  <section class="panel">
+    <h2>➕ דף חדש</h2>
+    <label class="f" for="title">שם הדף</label>
+    <input class="f" id="title" maxlength="40" placeholder="למשל: חוברת חזרה עמ׳ 2">
+    <label class="f" for="src">תרגיל אחד בכל שורה</label>
+    <textarea class="f" id="src" dir="ltr" spellcheck="false" placeholder="4,587 + 3,946&#10;368 × 47&#10;(48 − 6) × 5 + 12&#10;? × 25 = 1,500&#10;3/4 + 1/6&#10;3.45 + 2.7"></textarea>
+    <div class="note" style="margin-top:10px">
+      <b>מה אפשר לכתוב:</b>
+      <div class="ex">
+        <span>כפל וחילוק</span><div><code>7 × 8</code> <code>56 : 7</code></div>
+        <span>סדר פעולות</span><div><code>(48 − 6) × 5 + 12</code></div>
+        <span>שברים</span><div><code>3/4 + 1/6</code></div>
+        <span>עשרוניים</span><div><code>12.6 − 4.38</code></div>
+        <span>מספר חסר</span><div><code>8,400 : ? = 70</code></div>
+        <span>בעיה מילולית</span><div><code dir="rtl">כמה רגליים יש ל-3 כלבים? | 12</code></div>
+      </div>
+    </div>
+    <div id="preview"></div>
+    <div class="row" style="margin-top:14px"><button class="btn green" id="save" type="button" disabled>שמירה</button></div>
+  </section>
+</main>
+
+<script type="module">
+import { parseHomework } from './js/engine.js';
+import { $, esc, hudHTML, fracHTML, toast, requireProfile, showAnswer } from './js/ui.js';
+
+const { profile, kid, persist } = requireProfile();
+$('#hud').innerHTML = hudHTML(profile, kid);
+kid.homework = kid.homework || [];
+let parsed = { items: [], errors: [] };
+
+function list() {
+  $('#list').innerHTML = `<h2>📋 הדפים של ${esc(profile.name)}</h2>` + (kid.homework.length
+    ? `<div class="sets">${kid.homework.slice().reverse().map((h) => `
+        <div class="set"><div><h3>${esc(h.title)}</h3><small>${h.items.length} תרגילים · ${new Date(h.created).toLocaleDateString('he-IL')}</small></div>
+          <div class="row"><a class="btn" href="practice.html?hw=${h.id}">התחילי ←</a><button class="btn ghost" data-del="${h.id}" type="button" aria-label="מחיקה">🗑️</button></div></div>`).join('')}</div>`
+    : `<p class="sub">עדיין אין דפים. הוסיפו דף חדש למטה 👇</p>`);
+  $('#list').querySelectorAll('[data-del]').forEach((b) => (b.onclick = () => {
+    if (!confirm('למחוק את הדף?')) return;
+    kid.homework = kid.homework.filter((h) => h.id !== b.dataset.del); persist(); list();
+  }));
+}
+
+function preview() {
+  parsed = parseHomework($('#src').value);
+  const { items, errors } = parsed;
+  $('#preview').innerHTML = (items.length ? `<div class="preview">${items.map((p) => `
+      <div><span class="ltr">${p.expr ? fracHTML(p.expr) : esc(p.prompt)}</span><span class="ans ltr">${fracHTML(showAnswer(p))}</span></div>`).join('')}</div>` : '')
+    + (errors.length ? `<p class="err" style="margin-top:10px">לא הצלחתי לקרוא: ${errors.map((e) => `<span class="ltr">שורה ${e.line}: ${esc(e.text)}</span>`).join(' · ')}</p>` : '');
+  $('#save').disabled = !items.length;
+}
+$('#src').addEventListener('input', preview);
+
+$('#save').onclick = () => {
+  if (!parsed.items.length) return;
+  const title = $('#title').value.trim() || 'דף תרגול ' + new Date().toLocaleDateString('he-IL');
+  kid.homework.push({ id: 'h' + Date.now().toString(36), title, items: parsed.items, created: Date.now() });
+  if (kid.homework.length > 30) kid.homework.shift();
+  persist();
+  $('#src').value = ''; $('#title').value = ''; preview(); list();
+  toast('✅ הדף נשמר');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+list();
+</script>
+</body>
+</html>

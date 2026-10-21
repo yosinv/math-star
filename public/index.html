@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+<meta name="theme-color" content="#84d6ff">
+<title>Math Star — העולם שלי</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="wrap" id="app"><div class="panel" style="text-align:center">טוען…</div></main>
+
+<script type="module">
+import { GRADES, gradeInfo, skillsForGrade, coreSkills, stars, nextSkill, weakestSkill, MAX_LEVEL, SKILL_BY_ID, UNITS } from './js/engine.js';
+import { load, save, active, addProfile, updateProfile, missionsToday, AVATARS } from './js/store.js';
+import { $, $$, esc, hudHTML, levelBarHTML } from './js/ui.js';
+
+const app = $('#app');
+const state = load();
+const params = new URLSearchParams(location.search);
+
+function route() {
+  if (!state.profiles.length) return form();
+  if (params.has('pick') || !active(state)) return picker();
+  return world();
+}
+
+// ---------- Who's playing? ----------
+function picker() {
+  app.innerHTML = `
+    <section class="banner">
+      <span class="kicker">⭐ MATH STAR</span>
+      <h1>מי משחקת היום?</h1>
+      <p>בחרי את הדמות שלך ונמשיך מאיפה שעצרנו.</p>
+      <div class="deco">1+2=3</div>
+    </section>
+    <section class="panel" style="background:#ffffffcc">
+      <div class="kids">
+        ${state.profiles.map((p) => { const k = state.kids[p.id] || {}; return `
+          <button class="kid" data-id="${p.id}">
+            <div class="big">${esc(p.avatar)}</div>
+            <div class="name">${esc(p.name)}</div>
+            <div class="meta">${esc(gradeInfo(p.grade).label)} · ⭐ ${k.xp || 0} · 🔥 ${k.streak || 0}</div>
+          </button>`; }).join('')}
+        <button class="kid add" data-add><div class="big">➕</div><div class="name">ילדה חדשה</div><div class="meta">הוספת פרופיל</div></button>
+      </div>
+    </section>`;
+  $$('.kid[data-id]').forEach((b) => b.onclick = () => { state.activeId = b.dataset.id; save(state); history.replaceState(null, '', 'index.html'); params.delete('pick'); world(); });
+  $('[data-add]').onclick = () => form();
+}
+
+// ---------- Add / edit profile ----------
+function form(editId) {
+  const p = state.profiles.find((x) => x.id === editId);
+  let avatar = p?.avatar || AVATARS[state.profiles.length % AVATARS.length];
+  let grade = p?.grade || '2';
+  app.innerHTML = `
+    <section class="banner">
+      <span class="kicker">⭐ MATH STAR</span>
+      <h1>${p ? 'עריכת פרופיל' : 'ברוכה הבאה ל-Math Star!'}</h1>
+      <p>${p ? '' : 'בונים עולם של מספרים — כל תרגיל נכון מוסיף כוכבים, יהלומים ורמות.'}</p>
+      <div class="deco">7×8</div>
+    </section>
+    <form class="panel" id="f" autocomplete="off">
+      <label class="f" for="name">איך קוראים לך?</label>
+      <input class="f" id="name" maxlength="24" required value="${esc(p?.name || '')}" placeholder="שם או כינוי">
+      <label class="f">בחרי דמות</label>
+      <div class="avatars">${AVATARS.map((a) => `<button type="button" data-av="${a}" aria-pressed="${a === avatar}">${a}</button>`).join('')}</div>
+      <label class="f">באיזו כיתה את?</label>
+      <div class="grades">${GRADES.map((g) => `<button type="button" data-gr="${g.id}" aria-pressed="${g.id === grade}">${g.label}</button>`).join('')}</div>
+      <div class="row" style="margin-top:20px">
+        <button class="btn green" type="submit">${p ? 'שמירה' : 'יאללה, מתחילות! 🚀'}</button>
+        ${state.profiles.length ? `<button class="btn ghost" type="button" data-cancel>ביטול</button>` : ''}
+      </div>
+    </form>`;
+  $$('[data-av]').forEach((b) => b.onclick = () => { avatar = b.dataset.av; $$('[data-av]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
+  $$('[data-gr]').forEach((b) => b.onclick = () => { grade = b.dataset.gr; $$('[data-gr]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
+  $('[data-cancel]')?.addEventListener('click', () => (p ? world() : picker()));
+  $('#f').onsubmit = (e) => {
+    e.preventDefault();
+    const name = $('#name').value.trim();
+    if (!name) return $('#name').focus();
+    if (p) updateProfile(state, p.id, { name, avatar, grade }); else addProfile(state, { name, avatar, grade });
+    save(state);
+    history.replaceState(null, '', 'index.html'); params.delete('pick');
+    world();
+  };
+  $('#name').focus();
+}
+
+// ---------- My world ----------
+function world() {
+  const { profile, kid } = active(state);
+  const g = gradeInfo(profile.grade);
+  const skills = skillsForGrade(profile.grade);
+  const nxt = nextSkill(profile.grade, kid.skills);
+  const m = missionsToday(kid); save(state);
+  const review = kid.review.length
+    ? { href: 'practice.html?mode=review&mission=review', text: `${kid.review.length} תרגילים שכדאי לנסות שוב` }
+    : (() => { const w = weakestSkill(profile.grade, kid.skills) || skills[Math.min(1, skills.length - 1)].id; return { href: `practice.html?skill=${w}&mission=review`, text: `חיזוק: ${SKILL_BY_ID[w].title}` }; })();
+  const core = coreSkills(profile.grade);
+  const totalStars = core.reduce((a, s) => a + stars(kid.skills[s.id]), 0);
+
+  app.innerHTML = `
+    <div class="top"><div class="hud">${hudHTML(profile, kid)}</div></div>
+    <section class="banner" style="background:linear-gradient(135deg,${g.color},#a986ff)">
+      <span class="kicker">⭐ MATH STAR · ${esc(g.label)}</span>
+      <h1>${esc(profile.avatar)} העולם של ${esc(profile.name)}</h1>
+      <p>אספת ${totalStars} מתוך ${core.length * MAX_LEVEL} כוכבים בכיתה ${esc(g.label.replace('כיתה ', ''))}.</p>
+      ${levelBarHTML(kid)}
+      <div class="deco">${profile.grade === 'K' ? '1 2 3' : '9×9'}</div>
+    </section>
+
+    <section class="panel">
+      <h2>🎯 המשימות של היום</h2>
+      <p class="sub">משלימות את שלושתן ומקבלות 💎 5 בונוס!</p>
+      <div class="missions">
+        <a class="mission m1 ${m.practice ? 'done' : ''}" href="practice.html?skill=${nxt}&mission=practice">
+          <div><div class="emoji">${SKILL_BY_ID[nxt].emoji}</div><h3>תרגול היום</h3><p>${esc(SKILL_BY_ID[nxt].title)}</p></div>
+          <span class="go">${m.practice ? '✓ בוצע' : 'מתחילות ←'}</span></a>
+        <a class="mission m2 ${m.review ? 'done' : ''}" href="${review.href}">
+          <div><div class="emoji">🔁</div><h3>חזרה חכמה</h3><p>${esc(review.text)}</p></div>
+          <span class="go">${m.review ? '✓ בוצע' : 'מתחילות ←'}</span></a>
+        <a class="mission m3 ${m.game ? 'done' : ''}" href="games.html?mission=game">
+          <div><div class="emoji">🏰</div><h3>משחק</h3><p>מרוץ מספרים או מגדל הקוביות</p></div>
+          <span class="go">${m.game ? '✓ בוצע' : 'למשחק ←'}</span></a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="exam-cta">
+        <div><h3>📝 מבחן תרגול</h3><p>${profile.grade === '6' ? 'שאלות מכל נושאי חוברת החזרה — ניסיון אחד, בלי רמזים. בדיוק כמו במבחן.' : 'שאלות מכל המיומנויות — ניסיון אחד, בלי רמזים.'}</p></div>
+        <a class="btn orange" href="practice.html?mode=exam">התחילי מבחן ←</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>🧱 עולם המיומנויות</h2>
+      <p class="sub">כל קובייה היא מיומנות. 4 תשובות נכונות ברצף = כוכב ועלייה לשלב הבא.</p>
+      ${groups(profile.grade).map(([title, list]) => `
+        ${title ? `<h3 class="unit-h">${esc(title)}</h3>` : ''}
+        <div class="blocks">
+          ${list.map((s) => { const st = kid.skills[s.id]; const n = stars(st); return `
+            <a class="block ${s.id === nxt ? 'next' : ''}" style="--c:${s.extra ? '#8a97a8' : g.color}" href="practice.html?skill=${s.id}">
+              ${s.topic && s.topic !== 'x' ? `<span class="topic">${s.topic}</span>` : ''}
+              <span class="lvl">שלב ${st?.level || 1}</span>
+              <span class="e">${s.emoji}</span><span class="t">${esc(s.title)}</span>
+              <span class="stars">${'★'.repeat(n)}${'☆'.repeat(MAX_LEVEL - n)}</span>
+            </a>`; }).join('')}
+        </div>`).join('')}
+    </section>
+
+    <section class="panel">
+      <div class="tools">
+        <a class="tool" href="games.html"><span class="e">🎮</span><span>משחקים<small>מרוץ מספרים · מגדל קוביות</small></span></a>
+        <a class="tool" href="homework.html"><span class="e">📚</span><span>שיעורי בית<small>תרגילים מהדף של בית הספר</small></span></a>
+        <a class="tool" href="progress.html"><span class="e">📈</span><span>ההתקדמות שלי<small>גם להורים</small></span></a>
+      </div>
+    </section>`;
+}
+
+// Group a grade's skills by unit (grade 6 follows the review booklet's chapters).
+function groups(grade) {
+  const units = UNITS[grade];
+  const list = skillsForGrade(grade);
+  if (!units) return [['', list]];
+  return units.map((u) => [u.title, list.filter((s) => s.unit === u.id)]).filter(([, l]) => l.length);
+}
+
+route();
+</script>
+</body>
+</html>
