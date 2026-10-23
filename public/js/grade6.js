@@ -12,7 +12,7 @@ export const GRADE6_UNITS = [
 ];
 
 export function registerGrade6(h) {
-  const { skill, ri, pick, shuffle, num, choice, numberChoices, fractionChoices, gcd, round, fmt } = h;
+  const { skill, ri, pick, shuffle, num, choice, numberChoices, fractionChoices, gcd, round, fmt, person } = h;
   const N = (x) => (Number.isInteger(x) && Math.abs(x) >= 1000 ? x.toLocaleString('en-US') : fmt(x));
   const simp = ([n, d]) => { const g = gcd(n, d); return [n / g, d / g]; };
   const mixed = ([n, d]) => { if (d === 1) return String(n); if (n < d) return `${n}/${d}`; const w = Math.floor(n / d), r = n % d; return r ? `${w} ${r}/${d}` : String(w); };
@@ -20,7 +20,6 @@ export function registerGrade6(h) {
   const lcm = (a, b) => (a * b) / gcd(a, b);
   const S = (id, topic, unit, title, emoji, gen, extra = {}) => skill(id, '6', title, emoji, gen, { topic, unit, ...extra });
   const TF = ['נכון', 'לא נכון'];
-  const NAMES = ['נועה', 'מאיה', 'תמר', 'יעל', 'שירה', 'דנה', 'רוני', 'ליה', 'עדי', 'הילה'];
 
   // ===================== פרק 1 · מספרים שלמים =====================
   S('g6_vertical', '1.1', '1', 'ארבע פעולות במאונך', '🧮', (L, r) => {
@@ -88,11 +87,11 @@ export function registerGrade6(h) {
   });
 
   S('g6_word', '1.2', '1', 'בעיות מילוליות', '📖', (L, r) => {
-    const id = 'g6_word', g = pick(r, NAMES);
+    const id = 'g6_word', P = person(r), g = P.n, v = P.v;
     const t = L === 1 ? pick(r, [0, 1, 2]) : L === 2 ? pick(r, [3, 4, 5, 6]) : pick(r, [7, 8, 3]);
     switch (t) {
       case 0: { const m = ri(r, 3, 9), a = ri(r, 10, 40), res = m * ri(r, 4, 20) + a; return num(id, { prompt: `חשבתי על מספר. הכפלתי אותו ב-${m}, הוספתי ${a} וקיבלתי ${res}. על איזה מספר חשבתי?`, answer: (res - a) / m, hint: { type: 'text', text: 'עובדים מהסוף להתחלה: קודם מחסרים, אחר כך מחלקים' } }); }
-      case 1: { const m = ri(r, 4, 9) * 10 + pick(r, [0, 5]), price = ri(r, 300, m * 12 - 50); return num(id, { prompt: `${g} חסכה ${m} ₪ בכל חודש במשך שנה שלמה. בסוף השנה קנתה אופניים ב-${price} ₪. כמה כסף נשאר לה?`, answer: m * 12 - price }); }
+      case 1: { const m = ri(r, 4, 9) * 10 + pick(r, [0, 5]), price = ri(r, 300, m * 12 - 50); return num(id, { prompt: `${g} ${v('חסכה', 'חסך')} ${m} ₪ בכל חודש במשך שנה שלמה. בסוף השנה ${v('קנתה', 'קנה')} אופניים ב-${price} ₪. כמה כסף נשאר ${v('לה', 'לו')}?`, answer: m * 12 - price }); }
       case 2: { const cups = ri(r, 4, 8), sh = ri(r, 3, 6), each = ri(r, 12, 40), tot = cups * sh * each; return num(id, { prompt: `בספרייה יש ${N(tot)} ספרים, מסודרים באופן שווה ב-${cups} ארונות, ובכל ארון ${sh} מדפים. כמה ספרים יש בכל מדף?`, answer: each }); }
       case 3: { const cl = ri(r, 12, 30), st = ri(r, 25, 34), seats = pick(r, [40, 45, 50, 52, 55]); const total = cl * st; return num(id, { prompt: `בבית ספר יש ${cl} כיתות, ובכל כיתה ${st} תלמידים. כולם יוצאים לטיול באוטובוסים של ${seats} מקומות. כמה אוטובוסים צריך להזמין?`, answer: Math.ceil(total / seats), hint: { type: 'text', text: 'אם נשארים תלמידים — צריך עוד אוטובוס!' } }); }
       case 4: { const A = ri(r, 35, 60), K = ri(r, 18, 34), a = ri(r, 1, 3), k = ri(r, 2, 4), bill = pick(r, [200, 300, 500].filter((b) => b > A * a + K * k)); return num(id, { prompt: `כרטיס לפארק עולה ${A} ₪ למבוגר ו-${K} ₪ לילד. משפחה של ${a} מבוגרים ו-${k} ילדים שילמה בשטר של ${bill} ₪. כמה עודף קיבלה?`, answer: bill - (A * a + K * k) }); }
@@ -257,7 +256,7 @@ export function registerGrade6(h) {
   });
 
   S('g6_frac_of', '2.4', '2', 'חלק מכמות ובעיות', '🍬', (L, r) => {
-    const id = 'g6_frac_of', g = pick(r, NAMES);
+    const id = 'g6_frac_of', P = person(r), g = P.n, v = P.v;
     const fr = () => { const d = pick(r, [3, 4, 5, 6, 8, 10]); return [ri(r, 1, d - 1), d]; };
     if (L === 1) { const [n, d] = fr(), tot = d * ri(r, 3, 15); return num(id, { prompt: `כמה זה ${n}/${d} מ-${tot}?`, answer: (tot / d) * n, hint: { type: 'text', text: `מחלקים במכנה ומכפילים במונה: ${tot} : ${d} × ${n}` } }); }
     if (L === 2) {
@@ -267,7 +266,7 @@ export function registerGrade6(h) {
     const t = ri(r, 0, 2);
     if (t === 0) { const k = pick(r, [4, 5, 6, 10]), price = k * ri(r, 12, 60); return num(id, { prompt: `מחיר משחק ${price} ₪. בחנות נותנים הנחה של 1/${k} מהמחיר. כמה משלמים?`, answer: price - price / k }); }
     if (t === 1) { const tot = 12 * ri(r, 2, 8); return num(id, { prompt: `בגינה ${tot} עצים. 1/3 מהם עצי לימון, 1/4 מהם עצי תפוז, והשאר עצי זית. כמה עצי זית בגינה?`, answer: tot - tot / 3 - tot / 4 }); }
-    const pages = 20 * ri(r, 6, 20); return num(id, { prompt: `${g} קראה ביום הראשון 2/5 מהספר וביום השני 1/4 מהספר. בספר ${pages} עמודים. כמה עמודים נשארו לה?`, answer: pages - (pages * 2) / 5 - pages / 4, hint: { type: 'text', text: '2/5 + 1/4 = 13/20, נשאר 7/20 מהספר' } });
+    const pages = 20 * ri(r, 6, 20); return num(id, { prompt: `${g} ${v('קראה', 'קרא')} ביום הראשון 2/5 מהספר וביום השני 1/4 מהספר. בספר ${pages} עמודים. כמה עמודים נשארו ${v('לה', 'לו')}?`, answer: pages - (pages * 2) / 5 - pages / 4, hint: { type: 'text', text: '2/5 + 1/4 = 13/20, נשאר 7/20 מהספר' } });
   });
 
   S('g6_frac_sense', '2.5', '2', 'תובנה מספרית בשברים', '🤔', (L, r) => {
@@ -313,7 +312,7 @@ export function registerGrade6(h) {
   });
 
   S('g6_dec_add', '3.2', '3', 'חיבור וחיסור עשרוניים', '💧', (L, r) => {
-    const id = 'g6_dec_add', g = pick(r, NAMES);
+    const id = 'g6_dec_add', P = person(r), g = P.n, v = P.v;
     const dec = (lo, hi, places) => ri(r, lo * 10 ** places, hi * 10 ** places) / 10 ** places;
     const hint = { type: 'text', text: 'מיישרים נקודה מתחת לנקודה, ומוסיפים אפסים בסוף אם צריך' };
     if (L === 1) { const a = dec(1, 20, pick(r, [1, 2])), b = dec(1, 20, pick(r, [1, 2])); if (r() < 0.5) return num(id, { prompt: 'חשבי במאונך', expr: `${fmt(a)} + ${fmt(b)} = ?`, answer: round(a + b), hint }); const [x, y] = a > b ? [a, b] : [b, a]; return num(id, { prompt: 'חשבי במאונך', expr: `${fmt(x)} − ${fmt(y)} = ?`, answer: round(x - y), hint }); }
@@ -324,10 +323,10 @@ export function registerGrade6(h) {
       const a = dec(1, 9, 1), x = dec(1, 9, 2), tot = round(a + x); return r() < 0.5 ? num(id, { prompt: 'השלימי את המספר החסר', expr: `${fmt(a)} + ? = ${fmt(tot)}`, answer: x }) : num(id, { prompt: 'השלימי את המספר החסר', expr: `? − ${fmt(x)} = ${fmt(a)}`, answer: tot });
     }
     const t = ri(r, 0, 3);
-    if (t === 0) { const a = dec(5, 20, 2), b = dec(3, 15, 2), bill = pick(r, [50, 100].filter((v) => v > a + b)); return num(id, { prompt: `${g} קנתה מחברת ב-${fmt(a)} ₪ ועט ב-${fmt(b)} ₪. היא שילמה בשטר של ${bill} ₪. כמה עודף קיבלה?`, answer: round(bill - a - b) }); }
-    if (t === 1) { const h1 = dec(1.2, 1.6, 2), d = dec(0.05, 0.3, 2); return num(id, { prompt: `גובהה של ${g} ${fmt(h1)} מטר. אחיה גבוה ממנה ב-${fmt(d)} מטר. מה גובה אחיה?`, answer: round(h1 + d) }); }
+    if (t === 0) { const a = dec(5, 20, 2), b = dec(3, 15, 2), bill = pick(r, [50, 100].filter((v) => v > a + b)); return num(id, { prompt: `${g} ${v('קנתה', 'קנה')} מחברת ב-${fmt(a)} ₪ ועט ב-${fmt(b)} ₪. ${v('היא שילמה', 'הוא שילם')} בשטר של ${bill} ₪. כמה עודף ${v('קיבלה', 'קיבל')}?`, answer: round(bill - a - b) }); }
+    if (t === 1) { const h1 = dec(1.2, 1.6, 2), d = dec(0.05, 0.3, 2); return num(id, { prompt: `${v('גובהה', 'גובהו')} של ${g} ${fmt(h1)} מטר. ${v('אחיה', 'אחיו')} גבוה ${v('ממנה', 'ממנו')} ב-${fmt(d)} מטר. מה גובה ${v('אחיה', 'אחיו')}?`, answer: round(h1 + d) }); }
     if (t === 2) { const c1 = dec(0.2, 0.6, 2), c2 = dec(0.2, 0.6, 1); return num(id, { prompt: `בבקבוק היו 2 ליטרים מיץ. מזגו כוס של ${fmt(c1)} ליטר וכוס של ${fmt(c2)} ליטר. כמה מיץ נשאר?`, answer: round(2 - c1 - c2) }); }
-    const a = dec(1, 4, 1), b = dec(1, 4, 2), c = dec(1, 4, 1), goal = Math.ceil(a + b + c) + ri(r, 1, 3); return num(id, { prompt: `${g} רצה שלושה ימים: ${fmt(a)} ק"מ, ${fmt(b)} ק"מ ו-${fmt(c)} ק"מ. המטרה היא ${goal} ק"מ. כמה חסר לה?`, answer: round(goal - a - b - c) });
+    const a = dec(1, 4, 1), b = dec(1, 4, 2), c = dec(1, 4, 1), goal = Math.ceil(a + b + c) + ri(r, 1, 3); return num(id, { prompt: `${g} ${v('רצה', 'רץ')} שלושה ימים: ${fmt(a)} ק"מ, ${fmt(b)} ק"מ ו-${fmt(c)} ק"מ. המטרה היא ${goal} ק"מ. כמה חסר ${v('לה', 'לו')}?`, answer: round(goal - a - b - c) });
   });
 
   S('g6_dec_sense', '3.3', '3', 'תובנה בעשרוניים', '🧠', (L, r) => {

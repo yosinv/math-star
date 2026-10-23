@@ -38,7 +38,16 @@ const round = (x, d = 4) => Math.round(x * 10 ** d) / 10 ** d;
 const fmt = (x) => String(round(x, 4));
 
 const EMOJI = ['🍎', '⭐', '🐞', '🌸', '🐟', '🧁', '🎈', '🦋', '🍓', '💎'];
-const GIRLS = ['נועה', 'מאיה', 'תמר', 'יעל', 'שירה', 'עדי', 'רוני', 'ליה'];
+// Characters for word problems — girls and boys, with verbs that agree.
+export const KIDS = [
+  ['נועה', 'f'], ['מאיה', 'f'], ['תמר', 'f'], ['יעל', 'f'], ['שירה', 'f'], ['דנה', 'f'], ['ליה', 'f'], ['הילה', 'f'],
+  ['איתי', 'm'], ['יונתן', 'm'], ['עומר', 'm'], ['אורי', 'm'], ['דניאל', 'm'], ['נועם', 'm'], ['אלון', 'm'], ['עידו', 'm']
+];
+// person(rng) -> { n: name, v(fem, masc) } — v picks the form that agrees with the character.
+export function person(rng) {
+  const [n, g] = pick(rng, KIDS);
+  return { n, g, v: (f, m) => (g === 'f' ? f : m) };
+}
 
 // ---------- choice builders ----------
 export function numberChoices(rng, answer, count = 4) {
@@ -229,18 +238,18 @@ skill('g3_add1000', '3', 'חיבור וחיסור עד 1000', '🗼', (L, r) => 
 });
 
 skill('g3_word', '3', 'בעיות מילוליות', '📖', (L, r) => {
-  const g = pick(r, GIRLS);
+  const p = person(r), g = p.n, v = p.v;
   if (L === 1) {
     if (r() < 0.5) { const a = ri(r, 8, 30), b = ri(r, 5, 25); return num('g3_word', { prompt: `בכיתה של ${g} יש ${a} בנות ו-${b} בנים. כמה ילדים יש בכיתה?`, answer: a + b }); }
-    const a = ri(r, 15, 60), b = ri(r, 3, a - 2); return num('g3_word', { prompt: `ל${g} היו ${a} מדבקות. היא נתנה ${b} לחברה. כמה מדבקות נשארו לה?`, answer: a - b });
+    const a = ri(r, 15, 60), b = ri(r, 3, a - 2); return num('g3_word', { prompt: `ל${g} היו ${a} מדבקות. ${v('היא נתנה', 'הוא נתן')} ${b} ${v('לחברה', 'לחבר')}. כמה מדבקות נשארו ${v('לה', 'לו')}?`, answer: a - b });
   }
   if (L === 2) {
     const a = ri(r, 2, 9), b = ri(r, 3, 9);
     if (r() < 0.5) return num('g3_word', { prompt: `בכל קופסה יש ${b} עפרונות. כמה עפרונות יש ב-${a} קופסאות?`, answer: a * b });
-    return num('g3_word', { prompt: `${g} חילקה ${a * b} עוגיות שווה בשווה ל-${a} חברות. כמה עוגיות קיבלה כל חברה?`, answer: b });
+    return num('g3_word', { prompt: `${g} ${v('חילקה', 'חילק')} ${a * b} עוגיות שווה בשווה ל-${a} ${v('חברות', 'חברים')}. כמה עוגיות ${v('קיבלה כל חברה', 'קיבל כל חבר')}?`, answer: b });
   }
   const a = ri(r, 3, 8), b = ri(r, 4, 10), c = ri(r, 2, a * b - 1);
-  return num('g3_word', { prompt: `${g} קנתה ${a} חבילות, ובכל חבילה ${b} מדבקות. היא נתנה ${c} מדבקות לאחותה. כמה מדבקות נשארו ל${g}?`, answer: a * b - c });
+  return num('g3_word', { prompt: `${g} ${v('קנתה', 'קנה')} ${a} חבילות, ובכל חבילה ${b} מדבקות. ${v('היא נתנה', 'הוא נתן')} ${c} מדבקות ${v('לאחותה', 'לאחיו')}. כמה מדבקות נשארו ל${g}?`, answer: a * b - c });
 });
 
 // ===== כיתה ד׳ =====
@@ -334,7 +343,7 @@ skill('g5_divis', '5', 'סימני התחלקות', '🔍', (L, r) => {
 });
 
 // ===== כיתה ו׳ — aligned with the class review booklet (see grade6.js) =====
-registerGrade6({ skill, ri, pick, shuffle, num, choice, numberChoices, fractionChoices, gcd, round, fmt,
+registerGrade6({ skill, ri, pick, shuffle, num, choice, numberChoices, fractionChoices, gcd, round, fmt, person,
   generateAgain: (id, L, r) => SKILLS.find((x) => x.id === id).gen(L, r) });
 
 export const SKILL_BY_ID = Object.fromEntries(SKILLS.map((s) => [s.id, s]));

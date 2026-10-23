@@ -24,6 +24,14 @@ Static files are served from `public/`; the Worker lives in `src/worker.js` and 
 transfers to the test instead of memorising the booklet. Items that can't be auto-checked
 (drawing heights, "explain why", drawing on grid paper) stay on paper.
 
+### Boys and girls
+
+Each profile is בן or בת (profiles saved before this setting are בת). Text is written in the
+feminine form and `public/js/gender.js` rewrites the second-person forms for a boy from an
+explicit word list (never a suffix rule — "חלקי" is also "over" in "3 חלקי 4"). Screens shared by
+several children (who's playing, new profile) use the neutral plural. Word-problem characters are
+boys and girls, and their verbs agree with the character (`person()` in `engine.js`).
+
 ### Adaptivity
 
 - 4 correct in a row (first try) → star + next level (1 → 2 → 3)

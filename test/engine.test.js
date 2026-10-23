@@ -109,3 +109,34 @@ test('thousands separators are read correctly', () => {
   assert.deepEqual(evaluateExpression('0,125 × 8'), [1, 1]);
   assert.equal(parseHomework('9,156 : 12').items[0].answer, 763);
 });
+
+import { KIDS } from '../public/js/engine.js';
+import { gtext } from '../public/js/gender.js';
+
+test('gtext: boy forms, girl forms untouched, ambiguous words safe', () => {
+  assert.equal(gtext('כמעט! נסי שוב 💪', 'm'), 'כמעט! נסה שוב 💪');
+  assert.equal(gtext('את אלופה! 👑', 'm'), 'אתה אלוף! 👑');
+  assert.equal(gtext('התחילי מ-5 והורידי 2', 'm'), 'התחל מ-5 והורד 2');
+  assert.equal(gtext('מוסיפות ומורידות', 'm'), 'מוסיפים ומורידים');
+  assert.equal(gtext('3 חלקי 4', 'm'), '3 חלקי 4', 'fraction word must not change');
+  assert.equal(gtext('או חלקי לשני מלבנים', 'm'), 'או חלק לשני מלבנים');
+  assert.equal(gtext('בני מגדל של 10!', 'm'), 'בנה מגדל של 10!');
+  assert.equal(gtext('ספרייה', 'm'), 'ספרייה', 'only whole words');
+  assert.equal(gtext('חשבי במאונך', 'f'), 'חשבי במאונך');
+  const once = gtext('חשבי, ספרי, השלימי, שולטת', 'm');
+  assert.equal(gtext(once, 'm'), once, 'idempotent');
+});
+
+test('word problems: verbs agree with the character, both genders appear', () => {
+  const FEM = /(^|[^א-ת])(היא|לה|ממנה|אחיה|גובהה|קנתה|חסכה|קראה|רצה|שילמה|חילקה|נתנה|קיבלה|לאחותה)(?![א-ת])/;
+  const MASC = /(^|[^א-ת])(הוא|לו|ממנו|אחיו|גובהו|קנה|חסך|קרא|רץ|שילם|חילק|נתן|קיבל|לאחיו)(?![א-ת])/;
+  const boys = KIDS.filter(([, g]) => g === 'm').map(([n]) => n), girls = KIDS.filter(([, g]) => g === 'f').map(([n]) => n);
+  const seen = { f: 0, m: 0 };
+  for (const id of ['g3_word', 'g6_word', 'g6_frac_of', 'g6_dec_add']) for (let L = 1; L <= 3; L++) for (let i = 0; i < 300; i++) {
+    const prompt = generate(id, L).prompt.replace('המטרה היא', '');
+    const boy = boys.find((n) => prompt.includes(n)), girl = girls.find((n) => prompt.includes(n));
+    if (boy) { seen.m++; assert.ok(!FEM.test(prompt), 'feminine verb for a boy: ' + prompt); }
+    if (girl) { seen.f++; assert.ok(!MASC.test(prompt) || /המשפחה/.test(prompt), 'masculine verb for a girl: ' + prompt); }
+  }
+  assert.ok(seen.f > 50 && seen.m > 50, JSON.stringify(seen));
+});

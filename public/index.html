@@ -16,8 +16,9 @@
 
 <script type="module">
 import { GRADES, gradeInfo, skillsForGrade, coreSkills, stars, nextSkill, weakestSkill, MAX_LEVEL, SKILL_BY_ID, UNITS } from './js/engine.js';
-import { load, save, active, addProfile, updateProfile, missionsToday, AVATARS } from './js/store.js';
+import { load, save, active, addProfile, updateProfile, missionsToday, AVATARS, genderOf } from './js/store.js';
 import { $, $$, esc, hudHTML, levelBarHTML } from './js/ui.js';
+import { localize } from './js/gender.js';
 
 const app = $('#app');
 const state = load();
@@ -31,11 +32,12 @@ function route() {
 
 // ---------- Who's playing? ----------
 function picker() {
+  localize(document.body, 'f');
   app.innerHTML = `
     <section class="banner">
       <span class="kicker">⭐ MATH STAR</span>
-      <h1>מי משחקת היום?</h1>
-      <p>בחרי את הדמות שלך ונמשיך מאיפה שעצרנו.</p>
+      <h1>מי משחק/ת היום?</h1>
+      <p>בחרו את הדמות שלכם ונמשיך מאיפה שעצרנו.</p>
       <div class="deco">1+2=3</div>
     </section>
     <section class="panel" style="background:#ffffffcc">
@@ -46,7 +48,7 @@ function picker() {
             <div class="name">${esc(p.name)}</div>
             <div class="meta">${esc(gradeInfo(p.grade).label)} · ⭐ ${k.xp || 0} · 🔥 ${k.streak || 0}</div>
           </button>`; }).join('')}
-        <button class="kid add" data-add><div class="big">➕</div><div class="name">ילדה חדשה</div><div class="meta">הוספת פרופיל</div></button>
+        <button class="kid add" data-add><div class="big">➕</div><div class="name">פרופיל חדש</div><div class="meta">ילד או ילדה</div></button>
       </div>
     </section>`;
   $$('.kid[data-id]').forEach((b) => b.onclick = () => { state.activeId = b.dataset.id; save(state); history.replaceState(null, '', 'index.html'); params.delete('pick'); world(); });
@@ -58,33 +60,43 @@ function form(editId) {
   const p = state.profiles.find((x) => x.id === editId);
   let avatar = p?.avatar || AVATARS[state.profiles.length % AVATARS.length];
   let grade = p?.grade || '2';
+  let gender = p ? genderOf(p) : null;
+  localize(document.body, 'f');
   app.innerHTML = `
     <section class="banner">
       <span class="kicker">⭐ MATH STAR</span>
-      <h1>${p ? 'עריכת פרופיל' : 'ברוכה הבאה ל-Math Star!'}</h1>
+      <h1>${p ? 'עריכת פרופיל' : 'ברוכים הבאים ל-Math Star!'}</h1>
       <p>${p ? '' : 'בונים עולם של מספרים — כל תרגיל נכון מוסיף כוכבים, יהלומים ורמות.'}</p>
       <div class="deco">7×8</div>
     </section>
     <form class="panel" id="f" autocomplete="off">
       <label class="f" for="name">איך קוראים לך?</label>
       <input class="f" id="name" maxlength="24" required value="${esc(p?.name || '')}" placeholder="שם או כינוי">
-      <label class="f">בחרי דמות</label>
+      <label class="f">בן או בת?</label>
+      <div class="grades" id="gender">
+        <button type="button" data-gd="m" aria-pressed="${gender === 'm'}">👦 בן</button>
+        <button type="button" data-gd="f" aria-pressed="${gender === 'f'}">👧 בת</button>
+      </div>
+      <p class="err hidden" id="gdErr" style="margin:6px 0 0">בחרו בן או בת — ככה נדע איך לפנות אליך.</p>
+      <label class="f">בחרו דמות</label>
       <div class="avatars">${AVATARS.map((a) => `<button type="button" data-av="${a}" aria-pressed="${a === avatar}">${a}</button>`).join('')}</div>
-      <label class="f">באיזו כיתה את?</label>
+      <label class="f">באיזו כיתה?</label>
       <div class="grades">${GRADES.map((g) => `<button type="button" data-gr="${g.id}" aria-pressed="${g.id === grade}">${g.label}</button>`).join('')}</div>
       <div class="row" style="margin-top:20px">
-        <button class="btn green" type="submit">${p ? 'שמירה' : 'יאללה, מתחילות! 🚀'}</button>
+        <button class="btn green" type="submit">${p ? 'שמירה' : 'יאללה, מתחילים! 🚀'}</button>
         ${state.profiles.length ? `<button class="btn ghost" type="button" data-cancel>ביטול</button>` : ''}
       </div>
     </form>`;
   $$('[data-av]').forEach((b) => b.onclick = () => { avatar = b.dataset.av; $$('[data-av]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
   $$('[data-gr]').forEach((b) => b.onclick = () => { grade = b.dataset.gr; $$('[data-gr]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
+  $$('[data-gd]').forEach((b) => b.onclick = () => { gender = b.dataset.gd; $('#gdErr').classList.add('hidden'); $$('[data-gd]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
   $('[data-cancel]')?.addEventListener('click', () => (p ? world() : picker()));
   $('#f').onsubmit = (e) => {
     e.preventDefault();
     const name = $('#name').value.trim();
     if (!name) return $('#name').focus();
-    if (p) updateProfile(state, p.id, { name, avatar, grade }); else addProfile(state, { name, avatar, grade });
+    if (!gender) { $('#gdErr').classList.remove('hidden'); return $('#gender').scrollIntoView({ block: 'center' }); }
+    if (p) updateProfile(state, p.id, { name, avatar, grade, gender }); else addProfile(state, { name, avatar, grade, gender });
     save(state);
     history.replaceState(null, '', 'index.html'); params.delete('pick');
     world();
@@ -95,6 +107,7 @@ function form(editId) {
 // ---------- My world ----------
 function world() {
   const { profile, kid } = active(state);
+  localize(document.body, genderOf(profile));
   const g = gradeInfo(profile.grade);
   const skills = skillsForGrade(profile.grade);
   const nxt = nextSkill(profile.grade, kid.skills);

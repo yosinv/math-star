@@ -1,6 +1,7 @@
 // Shared DOM helpers for Math Star pages.
 import { check, spoken, playerLevel, levelProgress, XP_PER_LEVEL } from './engine.js';
-import { load, save, active } from './store.js';
+import { load, save, active, genderOf } from './store.js';
+import { localize, gtext, currentGender } from './gender.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -23,13 +24,14 @@ export function requireProfile() {
   const state = load();
   const a = active(state);
   if (!a) { location.replace('index.html'); throw new Error('no profile'); }
+  localize(document.body, genderOf(a.profile));
   return { state, ...a, persist: () => save(state) };
 }
 
 export function hudHTML(profile, kid) {
   const lvl = playerLevel(kid.xp);
   return `
-    <a class="hud-pill me" href="index.html?pick=1" title="החלפת ילדה"><span class="av">${esc(profile.avatar)}</span>${esc(profile.name)}</a>
+    <a class="hud-pill me" href="index.html?pick=1" title="החלפת פרופיל"><span class="av">${esc(profile.avatar)}</span>${esc(profile.name)}</a>
     <span class="hud-pill lvl-pill" title="רמה">🏅 ${lvl}</span>
     <span class="hud-pill" title="נקודות">⭐ <b data-xp>${kid.xp}</b></span>
     <span class="hud-pill" title="יהלומים">💎 <b data-gems>${kid.gems}</b></span>
@@ -77,7 +79,7 @@ export function onSpeechReady(cb) {
 export function speak(text) {
   if (!heVoice && !findVoice()) return;
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
+  const u = new SpeechSynthesisUtterance(gtext(text, currentGender));
   u.voice = heVoice; u.lang = heVoice.lang; u.rate = 0.9;
   speechSynthesis.speak(u);
 }

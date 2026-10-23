@@ -3,7 +3,9 @@
 import { applyAnswer, newSkillStats, XP_FIRST_TRY, XP_SECOND_TRY } from './engine.js';
 
 const KEY = 'mathstar.v1';
-export const AVATARS = ['🦄', '🐱', '🦊', '🐼', '🐰', '🦋', '🐬', '🌟', '🌈', '👑', '🐢', '🦁'];
+export const AVATARS = ['🦄', '🐱', '🦊', '🐼', '🐰', '🦋', '🐬', '🌟', '🌈', '👑', '🐢', '🦁', '🦖', '🐯', '⚽', '🚀'];
+// 'f' = girl, 'm' = boy. Profiles created before this setting existed are girls.
+export const genderOf = (profile) => (profile?.gender === 'm' ? 'm' : 'f');
 
 export const todayStr = (d = new Date()) => {
   const z = (n) => String(n).padStart(2, '0');
@@ -30,9 +32,9 @@ export function save(state) {
   try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { memoryFallback = state; }
 }
 
-export function addProfile(state, { name, avatar, grade }) {
+export function addProfile(state, { name, avatar, grade, gender }) {
   const id = 'k' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  state.profiles.push({ id, name: name.trim().slice(0, 24), avatar, grade, created: Date.now() });
+  state.profiles.push({ id, name: name.trim().slice(0, 24), avatar, grade, gender: gender === 'm' ? 'm' : 'f', created: Date.now() });
   state.kids[id] = baseChild();
   state.activeId = id;
   return id;
