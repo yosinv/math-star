@@ -35,9 +35,12 @@ import { GRADES, gradeInfo, coreSkills, accuracy, stars, playerLevel, UNITS, SKI
 import { save, updateProfile, removeProfile, exportBackup, importBackup, genderOf } from './js/store.js';
 import { localize } from './js/gender.js';
 import { $, esc, hudHTML, toast, requireProfile } from './js/ui.js';
+import { api } from './js/account.js';
+import { cloudProfile } from './js/session.js';
 
-const ctx = requireProfile();
-const { profile, kid, state, persist } = ctx;
+const ctx = await requireProfile();
+const { profile, kid, state, persist, session } = ctx;
+const cloud = session.mode === 'cloud';
 $('#hud').innerHTML = hudHTML(profile, kid);
 
 function status(st) {
@@ -106,28 +109,46 @@ function render() {
       <label class="f" for="gr">כיתה</label>
       <select class="f" id="gr">${GRADES.map((x) => `<option value="${x.id}" ${x.id === profile.grade ? 'selected' : ''}>${x.label}</option>`).join('')}</select>
       <div class="row" style="margin-top:14px"><button class="btn green" id="saveP" type="button">שמירה</button></div>
-      <p class="note" style="margin-top:16px">ההתקדמות נשמרת במכשיר הזה (בדפדפן). כדי להעביר למכשיר אחר — הורידו גיבוי וטענו אותו שם.</p>
+      <p class="err" id="setErr"></p>
+      ${cloud ? `<p class="note" style="margin-top:16px">☁️ ההתקדמות נשמרת בחשבון המשפחה ומופיעה בכל מכשיר שבו נכנסתם. שינויים כאן דורשים את קוד ההורים (אם הוגדר ב-English Star). מחיקת ילד/ה — בדף "המשפחה שלי" ב-English Star.</p>
+      <div class="row" style="margin-top:10px"><button class="btn ghost" id="exp" type="button">⬇️ הורדת גיבוי</button></div>`
+      : `<p class="note" style="margin-top:16px">ההתקדמות נשמרת במכשיר הזה (בדפדפן). כדי לשמור בכל מכשיר — היכנסו עם חשבון ההורים (מסך הפתיחה). אפשר גם להוריד גיבוי ולטעון אותו במכשיר אחר.</p>
       <div class="row" style="margin-top:10px">
         <button class="btn ghost" id="exp" type="button">⬇️ הורדת גיבוי</button>
         <label class="btn ghost" style="cursor:pointer">⬆️ טעינת גיבוי<input type="file" id="imp" accept="application/json,.json" hidden></label>
         <button class="btn red" id="del" type="button">מחיקת הפרופיל</button>
-      </div>
+      </div>`}
     </section>`;
 
-  $('#saveP').onclick = () => {
+  $('#saveP').onclick = async () => {
     const name = $('#nm').value.trim();
     if (!name) return $('#nm').focus();
-    updateProfile(state, profile.id, { name, grade: $('#gr').value, gender: $('#gd').value }); persist();
+    const next = { name, grade: $('#gr').value, gender: $('#gd').value };
+    if (cloud) {
+      $('#setErr').textContent = '';
+      try {
+        const id = encodeURIComponent(profile.id);
+        let res;
+        if (next.name !== profile.name) res = await api(`/api/math/children/${id}`, { method: 'PATCH', parent: true, body: { displayName: next.name } });
+        if (next.grade !== profile.grade || next.gender !== profile.gender) res = await api(`/api/math/children/${id}/settings`, { method: 'PATCH', parent: true, body: { gender: next.gender, mathGrade: next.grade } });
+        if (res) Object.assign(profile, cloudProfile(res.child));
+      } catch (e) {
+        $('#setErr').textContent = e?.data?.error === 'parent_pin_required' ? 'צריך את קוד ההורים כדי לשנות הגדרות.' : 'לא הצלחנו לשמור. נסו שוב.';
+        return;
+      }
+    } else {
+      updateProfile(state, profile.id, next); persist();
+    }
     localize(document.body, genderOf(profile));
     toast('✅ נשמר'); $('#hud').innerHTML = hudHTML(profile, kid); render();
   };
   $('#exp').onclick = () => {
-    const blob = new Blob([exportBackup(state)], { type: 'application/json' });
+    const blob = new Blob([exportBackup(cloud ? { profiles: [profile], activeId: profile.id, kids: { [profile.id]: kid } } : state)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `math-star-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
-  $('#imp').onchange = async (e) => {
+  if ($('#imp')) $('#imp').onchange = async (e) => {
     const f = e.target.files[0]; if (!f) return;
     try {
       const next = importBackup(await f.text());
@@ -135,7 +156,7 @@ function render() {
       save(next); location.href = 'index.html?pick=1';
     } catch { toast('הקובץ הזה לא גיבוי של Math Star'); }
   };
-  $('#del').onclick = () => {
+  if ($('#del')) $('#del').onclick = () => {
     if (!confirm(`למחוק את הפרופיל של ${profile.name} וכל ההתקדמות? אי אפשר לבטל.`)) return;
     removeProfile(state, profile.id); persist(); location.href = 'index.html?pick=1';
   };

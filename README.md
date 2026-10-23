@@ -39,18 +39,49 @@ boys and girls, and their verbs agree with the character (`person()` in `engine.
 - Anything not right on the first try goes into the review queue and comes back later
 - XP: +10 first try, +5 second try · level every 120 XP · gems per round · daily streak — same model as English Star
 
-## Storage
+## Accounts and storage — same model as English Star
 
-v1 keeps everything on the device (`localStorage`, key `mathstar.v1`), per child profile.
-Progress does **not** sync between devices; use **progress → הורדת גיבוי / טעינת גיבוי** to move it.
-The `/api/*` route in the Worker is the place to add D1 sync later, the way English Star grew its multi-user API.
+Math Star shares English Star's accounts:
+
+- **Parent sign-in** with English Star's Clerk app (same email/password or Google).
+- **Family and children** are the rows in English Star's D1 database (`families`, `children`) —
+  the same kids, names and characters on both sites. A child added on Math Star appears on English Star.
+- **Parent PIN** — the same 4-digit PIN (`parent_pins`), set on English Star's "My Family" page,
+  protects adding a child, renaming, and changing boy/girl or grade on Math Star.
+- **Math progress** is saved per child in `math_child_state` (one JSON document per child),
+  created by the Worker on first use. Deleting a child on English Star removes it too.
+
+Without sign-in nothing changes: profiles and progress stay on the device (`localStorage`,
+key `mathstar.v1`). The first time a parent signs in on a device that has progress, Math Star
+offers to move it into the family account (matching kids by name, or adding them), then keeps a
+dated copy on the device and clears it.
+
+Saving: after every answer, the child's progress is saved (retried if offline); tapping a link
+waits for the save to finish; closing the page sends a last save.
+
+### API (all need a signed-in parent)
+
+| Route | |
+|---|---|
+| `GET /api/math/me` | family's children with boy/girl and math grade |
+| `GET/PUT /api/math/children/:id/state` | load / save a child's math progress |
+| `PATCH /api/math/children/:id/settings` | boy/girl, grade — first time free, later needs the PIN |
+| `POST /api/math/children` · `PATCH /api/math/children/:id` | add / rename a child — parent PIN |
+| `GET /api/parent-pin` · `POST /api/parent-pin/unlock` · `/lock` | same PIN as English Star |
+
+### Configuration
+
+`wrangler.jsonc` binds English Star's D1 database and Clerk publishable key. The Worker also needs
+the **secret** `CLERK_SECRET_KEY` (same value as English Star's, from the Clerk dashboard → API keys),
+set in Cloudflare → math-star → Settings → Variables and secrets. Until it is set, guest mode works
+and sign-in shows "not ready yet".
 
 ## Develop
 
 ```sh
 npm install
 npm test        # engine tests: fuzzes every skill/level and cross-checks answers with an independent evaluator
-npm run dev     # wrangler dev
+npm run dev     # needs .dev.vars with CLERK_SECRET_KEY for sign-in; guest mode works without it
 ```
 
 ## Deploy

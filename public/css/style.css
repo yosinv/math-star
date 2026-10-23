@@ -230,3 +230,9 @@ svg.figure .accent-t{fill:var(--orange-dark);font-size:24px}
 .exam-cta p{margin:0;color:#3d5468;font-weight:600}
 .selfcheck td.lvl{font-weight:900;white-space:nowrap}
 .lvl-good{color:var(--green-dark)}.lvl-mid{color:var(--orange-dark)}.lvl-low{color:var(--red-dark)}.lvl-none{color:var(--muted)}
+
+/* account bar */
+.acct{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:#ffffffe6;border-radius:18px;padding:10px 14px;margin-bottom:12px;font-weight:700;box-shadow:0 4px 0 var(--shadow)}
+.acct .pill-btn{box-shadow:0 3px 0 var(--shadow);background:#eef3f8;min-height:40px;padding:8px 14px}
+.acct-sub{margin:-4px 4px 12px;font-size:14px;font-weight:600;color:#24465f}
+#signin{min-height:120px;text-align:center;font-weight:700}

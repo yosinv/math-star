@@ -140,3 +140,26 @@ test('word problems: verbs agree with the character, both genders appear', () =>
   }
   assert.ok(seen.f > 50 && seen.m > 50, JSON.stringify(seen));
 });
+
+import { mergeKids, toSharedAvatar, baseChild } from '../public/js/store.js';
+
+test('mergeKids: totals add, skills keep the further record, lists dedupe', () => {
+  const a = { ...baseChild(), xp: 100, gems: 4, answered: 20, correct: 15, streak: 3, lastDay: '2026-10-20',
+    skills: { g3_times: { level: 2, cleared: 1, seen: 10 }, g3_div: { level: 1, cleared: 0, seen: 3 } },
+    review: [{ key: 'k1' }, { key: 'k2' }], homework: [{ id: 'h1' }], rounds: [{ at: 1 }], games: { rush: { g3_times: 7 }, towers: 1 } };
+  const b = { ...baseChild(), xp: 50, gems: 1, answered: 8, correct: 6, streak: 5, lastDay: '2026-10-22',
+    skills: { g3_times: { level: 1, cleared: 0, seen: 30 }, g3_div: { level: 3, cleared: 2, seen: 9 } },
+    review: [{ key: 'k2' }, { key: 'k3' }], homework: [{ id: 'h1' }, { id: 'h2' }], rounds: [{ at: 2 }], games: { rush: { g3_times: 9 }, towers: 2 }, missions: { '2026-10-22': { practice: true } } };
+  const m = mergeKids(a, b);
+  assert.equal(m.xp, 150); assert.equal(m.gems, 5); assert.equal(m.answered, 28); assert.equal(m.correct, 21);
+  assert.equal(m.streak, 5); assert.equal(m.lastDay, '2026-10-22');
+  assert.equal(m.skills.g3_times.cleared, 1, 'more stars wins over more questions');
+  assert.equal(m.skills.g3_div.cleared, 2);
+  assert.deepEqual(m.review.map((r) => r.key), ['k1', 'k2', 'k3']);
+  assert.deepEqual(m.homework.map((h) => h.id), ['h1', 'h2']);
+  assert.equal(m.games.rush.g3_times, 9); assert.equal(m.games.towers, 3);
+  assert.deepEqual(m.missions, b.missions);
+  assert.equal(mergeKids(null, b).xp, 50, 'empty account takes the device copy as is');
+  assert.equal(mergeKids({ ...baseChild() }, b).xp, 50);
+  assert.equal(toSharedAvatar('🚀'), '🧑‍🚀'); assert.equal(toSharedAvatar('🦊'), '🦊');
+});

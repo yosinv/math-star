@@ -1,6 +1,7 @@
 // Shared DOM helpers for Math Star pages.
 import { check, spoken, playerLevel, levelProgress, XP_PER_LEVEL } from './engine.js';
-import { load, save, active, genderOf } from './store.js';
+import { genderOf } from './store.js';
+import { openSession } from './session.js';
 import { localize, gtext, currentGender } from './gender.js';
 
 export const $ = (sel, root = document) => root.querySelector(sel);
@@ -20,12 +21,20 @@ export function exprHTML(expr, filled) {
   return h;
 }
 
-export function requireProfile() {
-  const state = load();
-  const a = active(state);
-  if (!a) { location.replace('index.html'); throw new Error('no profile'); }
-  localize(document.body, genderOf(a.profile));
-  return { state, ...a, persist: () => save(state) };
+// Every game page starts here. Works the same with or without a signed-in parent:
+// returns { state, profile, kid, persist, session }. Sends the child to the start page
+// when no child is picked yet (or a signed-in child still needs boy/girl and grade).
+export async function requireProfile() {
+  const session = await openSession({
+    onSaveError: () => toast('⚠️ ההתקדמות לא נשמרה — ננסה שוב כשיהיה חיבור', 4000),
+    onSaved: () => toast('✅ נשמר')
+  });
+  const profile = session.state.profiles.find((p) => p.id === session.state.activeId);
+  if (!profile || profile.needsSetup) { location.replace('index.html'); throw new Error('no profile'); }
+  let kid;
+  try { kid = await session.loadKid(profile.id); } catch (e) { location.replace('index.html?error=load'); throw e; }
+  localize(document.body, genderOf(profile));
+  return { state: session.state, profile, kid, persist: () => session.persist(), session };
 }
 
 export function hudHTML(profile, kid) {

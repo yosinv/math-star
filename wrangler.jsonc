@@ -11,6 +11,20 @@
     "not_found_handling": "404-page",
     "run_worker_first": ["/api/*"]
   },
+  // Accounts are shared with English Star: same Clerk app, same D1 database.
+  // Math Star only adds its own table (math_child_state), created by the Worker on first use.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "english-star",
+      "database_id": "7449c8c8-1c44-45e4-bcd3-ad2333ae7f60"
+    }
+  ],
+  "vars": {
+    "CLERK_PUBLISHABLE_KEY": "pk_test_bGVnaWJsZS1pYmV4LTE4OTcuY2xlcmsuYWNjb3VudHMuZGV2JA",
+    "LEGACY_OWNER_FAMILY_ID": "53852750-9496-4d8b-bb8b-f814374709fb"
+  },
+  // CLERK_SECRET_KEY is a Worker secret (same value as English Star's) — never commit it.
   "observability": {
     "enabled": true
   }

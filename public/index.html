@@ -16,102 +16,284 @@
 
 <script type="module">
 import { GRADES, gradeInfo, skillsForGrade, coreSkills, stars, nextSkill, weakestSkill, MAX_LEVEL, SKILL_BY_ID, UNITS } from './js/engine.js';
-import { load, save, active, addProfile, updateProfile, missionsToday, AVATARS, genderOf } from './js/store.js';
-import { $, $$, esc, hudHTML, levelBarHTML } from './js/ui.js';
+import { load, addProfile, missionsToday, AVATARS, genderOf, archiveDevice } from './js/store.js';
+import { $, $$, esc, hudHTML, levelBarHTML, toast } from './js/ui.js';
 import { localize } from './js/gender.js';
+import { openSession, cloudProfile, hasDeviceProgress, mergeKids, toSharedAvatar } from './js/session.js';
+import { mountSignIn, signOut, api, ApiError, parentEmail } from './js/account.js';
 
 const app = $('#app');
-const state = load();
 const params = new URLSearchParams(location.search);
+let session;
+const profileOf = (id) => session.state.profiles.find((p) => p.id === id);
+const later = () => { try { return sessionStorage.getItem('mathStarImportLater') === '1'; } catch { return false; } };
+
+async function start() {
+  if (params.has('signin')) return signInScreen();
+  session = await openSession({ onSaveError: () => toast('⚠️ ההתקדמות לא נשמרה — ננסה שוב כשיהיה חיבור', 4000) });
+  if (session.mode === 'cloud-error') return cloudError(session.error);
+  if (session.mode === 'cloud' && hasDeviceProgress() && !later()) return importScreen();
+  route();
+}
 
 function route() {
-  if (!state.profiles.length) return form();
-  if (params.has('pick') || !active(state)) return picker();
-  return world();
+  const st = session.state;
+  if (!st.profiles.length) return session.mode === 'cloud' ? picker() : form();
+  if (params.has('pick') || !profileOf(st.activeId)) return picker();
+  openChild(st.activeId);
+}
+
+async function openChild(id) {
+  session.setActive(id);
+  const p = profileOf(id);
+  if (p.needsSetup) return setupScreen(p);
+  app.innerHTML = '<div class="panel" style="text-align:center">טוען…</div>';
+  try { await session.loadKid(id); } catch (e) { return cloudError(e); }
+  history.replaceState(null, '', 'index.html'); params.delete('pick');
+  world();
+}
+
+// ---------- account bar (shared screens) ----------
+function accountBar() {
+  if (session?.mode === 'cloud') {
+    return `<div class="acct"><span>☁️ מחוברים${parentEmail() ? ' · <span class="ltr">' + esc(parentEmail()) + '</span>' : ''} · ההתקדמות נשמרת בחשבון המשפחה, יחד עם English Star</span>
+      <button class="pill-btn" type="button" data-signout>יציאה</button></div>`;
+  }
+  return `<div class="acct"><span>💾 ההתקדמות נשמרת רק במכשיר הזה</span>
+    <a class="pill-btn" href="index.html?signin=1">👨‍👩‍👧 כניסת הורים</a></div>
+    <p class="acct-sub">עם אותו חשבון של English Star: אותם ילדים, וההתקדמות נשמרת בכל מכשיר.</p>`;
+}
+function wireAccountBar() {
+  $('[data-signout]')?.addEventListener('click', async () => { await session.flush?.(); await signOut(); location.href = 'index.html'; });
+}
+
+// ---------- parent sign-in ----------
+function signInScreen() {
+  localize(document.body, 'f');
+  app.innerHTML = `
+    <div class="top"><a class="pill-btn" href="index.html">→ חזרה</a></div>
+    <section class="banner" style="background:linear-gradient(135deg,#16b5a8,#2f8fe0)">
+      <span class="kicker">👨‍👩‍👧 כניסת הורים</span>
+      <h1>אותו חשבון כמו English Star</h1>
+      <p>אחרי הכניסה יופיעו הילדים של המשפחה, וההתקדמות במתמטיקה תישמר בחשבון — בכל מכשיר.</p>
+    </section>
+    <section class="panel" style="display:flex;justify-content:center"><div id="signin" dir="ltr">טוען…</div></section>`;
+  mountSignIn($('#signin')).then((clerk) => { if (clerk.isSignedIn) location.href = 'index.html?signedin=1'; })
+    .catch(() => { $('#signin').textContent = 'לא הצלחנו לטעון את הכניסה. בדקו את החיבור ונסו שוב.'; });
+}
+
+function cloudError(e) {
+  localize(document.body, 'f');
+  const notReady = e instanceof ApiError && e.data?.error === 'sign_in_not_configured';
+  const frozen = e instanceof ApiError && e.status === 423;
+  app.innerHTML = `
+    <section class="banner" style="background:linear-gradient(135deg,#ef5b6e,#ff9f43)">
+      <span class="kicker">⭐ MATH STAR</span>
+      <h1>${frozen ? 'החשבון מושהה' : notReady ? 'הכניסה עוד לא מוכנה' : 'אין חיבור לשרת'}</h1>
+      <p>${frozen ? 'החשבון הושהה על ידי המנהל. ההתקדמות שמורה.' : notReady ? 'השרת עוד לא הוגדר לכניסת הורים. אפשר להמשיך במכשיר הזה בינתיים.' : 'ההתקדמות שמורה בחשבון. בדקו את החיבור לאינטרנט ונסו שוב.'}</p>
+    </section>
+    <div class="row" style="margin-top:16px">
+      <button class="btn" type="button" onclick="location.reload()">לנסות שוב 🔄</button>
+      <button class="btn ghost" type="button" data-guest>${notReady ? 'להמשיך במכשיר הזה' : 'יציאה מהחשבון'}</button>
+    </div>`;
+  $('[data-guest]').onclick = async () => { await signOut().catch(() => {}); location.href = 'index.html'; };
+}
+
+// ---------- moving device progress into the family account ----------
+function importScreen() {
+  localize(document.body, 'f');
+  const local = load();
+  const cloud = session.state.profiles;
+  const rows = local.profiles.filter((p) => { const k = local.kids[p.id] || {}; return (k.answered || 0) > 0 || (k.xp || 0) > 0 || (k.homework || []).length > 0; });
+  const norm = (s) => String(s || '').trim();
+  app.innerHTML = `
+    <section class="banner" style="background:linear-gradient(135deg,#16b5a8,#2f8fe0)">
+      <span class="kicker">☁️ מעבר לחשבון המשפחה</span>
+      <h1>יש התקדמות במכשיר הזה</h1>
+      <p>נעביר אותה לחשבון, כדי שתישמר ותופיע בכל מכשיר. בחרו לכל פרופיל לאיזה ילד/ה במשפחה הוא שייך.</p>
+    </section>
+    <section class="panel">
+      <table class="t"><tbody>
+        ${rows.map((p) => { const k = local.kids[p.id] || {}; const match = cloud.find((c) => norm(c.name) === norm(p.name)); return `
+          <tr><td style="font-size:30px;width:44px">${esc(p.avatar)}</td>
+            <td><b>${esc(p.name)}</b><br><small class="sub">${esc(gradeInfo(p.grade).label)} · ⭐ ${k.xp || 0} · ${k.answered || 0} תרגילים</small></td>
+            <td style="width:46%"><select class="f" data-row="${p.id}">
+              ${cloud.map((c) => `<option value="${c.id}" ${match?.id === c.id ? 'selected' : ''}>${esc(c.avatar)} ${esc(c.name)}</option>`).join('')}
+              <option value="new" ${match ? '' : 'selected'}>➕ חדש/ה במשפחה</option>
+              <option value="skip">לא להעביר</option>
+            </select></td></tr>`; }).join('')}
+      </tbody></table>
+      <p class="note" style="margin-top:12px">הוספת ילד/ה למשפחה דורשת את קוד ההורים, אם הוגדר ב-English Star. אם הילד/ה כבר תרגל/ה בחשבון — ההתקדמות תתחבר.</p>
+      <p class="err" id="impErr"></p>
+      <div class="row" style="margin-top:12px">
+        <button class="btn green" id="imp" type="button">להעביר את ההתקדמות ☁️</button>
+        <button class="btn ghost" id="impLater" type="button">לא עכשיו</button>
+      </div>
+    </section>`;
+  $('#impLater').onclick = () => { try { sessionStorage.setItem('mathStarImportLater', '1'); } catch {} route(); };
+  $('#imp').onclick = async () => {
+    const btn = $('#imp'); btn.disabled = true; $('#impErr').textContent = '';
+    try {
+      for (const p of rows) {
+        const choice = $(`[data-row="${p.id}"]`).value;
+        if (choice === 'skip') continue;
+        let target = choice;
+        if (choice === 'new') {
+          const { child } = await api('/api/math/children', { method: 'POST', parent: true, body: { displayName: p.name, avatar: toSharedAvatar(p.avatar), mathGrade: p.grade, gender: genderOf(p) } });
+          target = child.id;
+        } else {
+          const c = profileOf(target), fill = {};
+          if (!c.gender) fill.gender = genderOf(p);
+          if (!c.grade) fill.mathGrade = p.grade;
+          if (Object.keys(fill).length) await api(`/api/math/children/${encodeURIComponent(target)}/settings`, { method: 'PATCH', body: fill });
+        }
+        const cur = await api(`/api/math/children/${encodeURIComponent(target)}/state`);
+        const merged = mergeKids(cur.state, local.kids[p.id]);
+        await api(`/api/math/children/${encodeURIComponent(target)}/state`, { method: 'PUT', body: { state: merged } });
+      }
+      archiveDevice();
+      location.href = 'index.html?pick=1';
+    } catch (e) {
+      btn.disabled = false;
+      $('#impErr').textContent = e?.data?.error === 'parent_pin_required' ? 'צריך את קוד ההורים כדי להוסיף ילד/ה למשפחה.' : 'ההעברה לא הושלמה. שום דבר לא נמחק מהמכשיר — נסו שוב.';
+    }
+  };
 }
 
 // ---------- Who's playing? ----------
 function picker() {
   localize(document.body, 'f');
+  const st = session.state, cloud = session.mode === 'cloud';
   app.innerHTML = `
+    ${accountBar()}
     <section class="banner">
       <span class="kicker">⭐ MATH STAR</span>
       <h1>מי משחק/ת היום?</h1>
-      <p>בחרו את הדמות שלכם ונמשיך מאיפה שעצרנו.</p>
+      <p>${cloud ? 'הילדים של המשפחה — אותם ילדים כמו ב-English Star.' : 'בחרו את הדמות שלכם ונמשיך מאיפה שעצרנו.'}</p>
       <div class="deco">1+2=3</div>
     </section>
     <section class="panel" style="background:#ffffffcc">
       <div class="kids">
-        ${state.profiles.map((p) => { const k = state.kids[p.id] || {}; return `
+        ${st.profiles.map((p) => { const k = st.kids[p.id]; return `
           <button class="kid" data-id="${p.id}">
             <div class="big">${esc(p.avatar)}</div>
             <div class="name">${esc(p.name)}</div>
-            <div class="meta">${esc(gradeInfo(p.grade).label)} · ⭐ ${k.xp || 0} · 🔥 ${k.streak || 0}</div>
+            <div class="meta">${p.grade ? esc(gradeInfo(p.grade).label) : 'עוד לא בחרנו כיתה'}${k ? ` · ⭐ ${k.xp || 0} · 🔥 ${k.streak || 0}` : ''}</div>
           </button>`; }).join('')}
-        <button class="kid add" data-add><div class="big">➕</div><div class="name">פרופיל חדש</div><div class="meta">ילד או ילדה</div></button>
+        <button class="kid add" data-add><div class="big">➕</div><div class="name">${cloud ? 'ילד/ה במשפחה' : 'פרופיל חדש'}</div><div class="meta">${cloud ? 'להורים' : 'ילד או ילדה'}</div></button>
       </div>
     </section>`;
-  $$('.kid[data-id]').forEach((b) => b.onclick = () => { state.activeId = b.dataset.id; save(state); history.replaceState(null, '', 'index.html'); params.delete('pick'); world(); });
+  wireAccountBar();
+  $$('.kid[data-id]').forEach((b) => b.onclick = () => openChild(b.dataset.id));
   $('[data-add]').onclick = () => form();
 }
 
-// ---------- Add / edit profile ----------
-function form(editId) {
-  const p = state.profiles.find((x) => x.id === editId);
-  let avatar = p?.avatar || AVATARS[state.profiles.length % AVATARS.length];
-  let grade = p?.grade || '2';
-  let gender = p ? genderOf(p) : null;
+// ---------- Add a child ----------
+function form() {
+  const st = session.state, cloud = session.mode === 'cloud';
+  let avatar = AVATARS[(st.profiles.length * 7) % AVATARS.length];
+  let grade = '2';
+  let gender = null;
   localize(document.body, 'f');
   app.innerHTML = `
+    ${st.profiles.length ? '' : accountBar()}
     <section class="banner">
       <span class="kicker">⭐ MATH STAR</span>
-      <h1>${p ? 'עריכת פרופיל' : 'ברוכים הבאים ל-Math Star!'}</h1>
-      <p>${p ? '' : 'בונים עולם של מספרים — כל תרגיל נכון מוסיף כוכבים, יהלומים ורמות.'}</p>
+      <h1>${cloud ? 'ילד/ה חדש/ה במשפחה' : 'ברוכים הבאים ל-Math Star!'}</h1>
+      <p>${cloud ? 'יופיע/תופיע גם ב-English Star.' : 'בונים עולם של מספרים — כל תרגיל נכון מוסיף כוכבים, יהלומים ורמות.'}</p>
       <div class="deco">7×8</div>
     </section>
     <form class="panel" id="f" autocomplete="off">
-      <label class="f" for="name">איך קוראים לך?</label>
-      <input class="f" id="name" maxlength="24" required value="${esc(p?.name || '')}" placeholder="שם או כינוי">
+      <label class="f" for="name">${cloud ? 'שם' : 'איך קוראים לך?'}</label>
+      <input class="f" id="name" maxlength="24" required placeholder="שם או כינוי">
       <label class="f">בן או בת?</label>
       <div class="grades" id="gender">
-        <button type="button" data-gd="m" aria-pressed="${gender === 'm'}">👦 בן</button>
-        <button type="button" data-gd="f" aria-pressed="${gender === 'f'}">👧 בת</button>
+        <button type="button" data-gd="m" aria-pressed="false">👦 בן</button>
+        <button type="button" data-gd="f" aria-pressed="false">👧 בת</button>
       </div>
-      <p class="err hidden" id="gdErr" style="margin:6px 0 0">בחרו בן או בת — ככה נדע איך לפנות אליך.</p>
+      <p class="err hidden" id="gdErr" style="margin:6px 0 0">בחרו בן או בת — ככה נדע איך לפנות.</p>
       <label class="f">בחרו דמות</label>
       <div class="avatars">${AVATARS.map((a) => `<button type="button" data-av="${a}" aria-pressed="${a === avatar}">${a}</button>`).join('')}</div>
       <label class="f">באיזו כיתה?</label>
       <div class="grades">${GRADES.map((g) => `<button type="button" data-gr="${g.id}" aria-pressed="${g.id === grade}">${g.label}</button>`).join('')}</div>
+      <p class="err" id="fErr"></p>
       <div class="row" style="margin-top:20px">
-        <button class="btn green" type="submit">${p ? 'שמירה' : 'יאללה, מתחילים! 🚀'}</button>
-        ${state.profiles.length ? `<button class="btn ghost" type="button" data-cancel>ביטול</button>` : ''}
+        <button class="btn green" type="submit">${cloud ? 'הוספה למשפחה' : 'יאללה, מתחילים! 🚀'}</button>
+        ${st.profiles.length ? `<button class="btn ghost" type="button" data-cancel>ביטול</button>` : ''}
       </div>
     </form>`;
+  wireAccountBar();
   $$('[data-av]').forEach((b) => b.onclick = () => { avatar = b.dataset.av; $$('[data-av]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
   $$('[data-gr]').forEach((b) => b.onclick = () => { grade = b.dataset.gr; $$('[data-gr]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
   $$('[data-gd]').forEach((b) => b.onclick = () => { gender = b.dataset.gd; $('#gdErr').classList.add('hidden'); $$('[data-gd]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
-  $('[data-cancel]')?.addEventListener('click', () => (p ? world() : picker()));
-  $('#f').onsubmit = (e) => {
+  $('[data-cancel]')?.addEventListener('click', picker);
+  $('#f').onsubmit = async (e) => {
     e.preventDefault();
     const name = $('#name').value.trim();
     if (!name) return $('#name').focus();
     if (!gender) { $('#gdErr').classList.remove('hidden'); return $('#gender').scrollIntoView({ block: 'center' }); }
-    if (p) updateProfile(state, p.id, { name, avatar, grade, gender }); else addProfile(state, { name, avatar, grade, gender });
-    save(state);
-    history.replaceState(null, '', 'index.html'); params.delete('pick');
-    world();
+    if (!cloud) {
+      const id = addProfile(st, { name, avatar, grade, gender });
+      session.persist();
+      return openChild(id);
+    }
+    const btn = $('#f button[type=submit]'); btn.disabled = true; $('#fErr').textContent = '';
+    try {
+      const { child } = await api('/api/math/children', { method: 'POST', parent: true, body: { displayName: name, avatar, mathGrade: grade, gender } });
+      st.profiles.push(cloudProfile(child));
+      openChild(child.id);
+    } catch (err) {
+      btn.disabled = false;
+      $('#fErr').textContent = err?.data?.error === 'parent_pin_required' ? 'צריך את קוד ההורים כדי להוסיף ילד/ה.' : 'לא הצלחנו להוסיף. נסו שוב.';
+    }
   };
   $('#name').focus();
 }
 
+// ---------- first visit of a family child: boy/girl and grade ----------
+function setupScreen(p) {
+  let gender = p.gender, grade = p.grade;
+  localize(document.body, 'f');
+  app.innerHTML = `
+    <div class="top"><a class="pill-btn" href="index.html?pick=1">→ החלפת פרופיל</a></div>
+    <section class="banner">
+      <span class="kicker">⭐ MATH STAR</span>
+      <h1>${esc(p.avatar)} שלום ${esc(p.name)}!</h1>
+      <p>עוד שתי שאלות קטנות ומתחילים.</p>
+    </section>
+    <section class="panel">
+      ${p.gender ? '' : `<label class="f">בן או בת?</label>
+      <div class="grades"><button type="button" data-gd="m" aria-pressed="false">👦 בן</button><button type="button" data-gd="f" aria-pressed="false">👧 בת</button></div>`}
+      ${p.grade ? '' : `<label class="f">באיזו כיתה?</label>
+      <div class="grades">${GRADES.map((g) => `<button type="button" data-gr="${g.id}" aria-pressed="false">${g.label}</button>`).join('')}</div>`}
+      <p class="err" id="sErr"></p>
+      <div class="row" style="margin-top:18px"><button class="btn green" id="go" type="button">יאללה! 🚀</button></div>
+    </section>`;
+  $$('[data-gd]').forEach((b) => b.onclick = () => { gender = b.dataset.gd; $$('[data-gd]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
+  $$('[data-gr]').forEach((b) => b.onclick = () => { grade = b.dataset.gr; $$('[data-gr]').forEach((x) => x.setAttribute('aria-pressed', x === b)); });
+  $('#go').onclick = async () => {
+    if (!gender || !grade) { $('#sErr').textContent = !gender ? 'בחרו בן או בת' : 'בחרו כיתה'; return; }
+    $('#go').disabled = true;
+    try {
+      const { child } = await api(`/api/math/children/${encodeURIComponent(p.id)}/settings`, { method: 'PATCH', body: { gender, mathGrade: grade } });
+      Object.assign(p, cloudProfile(child));
+      openChild(p.id);
+    } catch {
+      $('#go').disabled = false; $('#sErr').textContent = 'לא הצלחנו לשמור. נסו שוב.';
+    }
+  };
+}
+
 // ---------- My world ----------
 function world() {
-  const { profile, kid } = active(state);
+  const profile = profileOf(session.state.activeId), kid = session.state.kids[profile.id];
   localize(document.body, genderOf(profile));
   const g = gradeInfo(profile.grade);
   const skills = skillsForGrade(profile.grade);
   const nxt = nextSkill(profile.grade, kid.skills);
-  const m = missionsToday(kid); save(state);
+  const before = JSON.stringify(kid.missions || {});
+  const m = missionsToday(kid);
+  if (JSON.stringify(kid.missions) !== before) session.persist();
   const review = kid.review.length
     ? { href: 'practice.html?mode=review&mission=review', text: `${kid.review.length} תרגילים שכדאי לנסות שוב` }
     : (() => { const w = weakestSkill(profile.grade, kid.skills) || skills[Math.min(1, skills.length - 1)].id; return { href: `practice.html?skill=${w}&mission=review`, text: `חיזוק: ${SKILL_BY_ID[w].title}` }; })();
@@ -184,7 +366,7 @@ function groups(grade) {
   return units.map((u) => [u.title, list.filter((s) => s.unit === u.id)]).filter(([, l]) => l.length);
 }
 
-route();
+start();
 </script>
 </body>
 </html>

@@ -44,7 +44,7 @@ import { skillsForGrade, coreSkills, nextSkill, generate, SKILL_BY_ID } from './
 import { recordAnswer, completeMission } from './js/store.js';
 import { $, esc, hudHTML, QuestionView, confetti, toast, requireProfile } from './js/ui.js';
 
-const { profile, kid, persist } = requireProfile();
+const { profile, kid, persist } = await requireProfile();
 const params = new URLSearchParams(location.search);
 const mission = params.get('mission');
 const app = $('#app');

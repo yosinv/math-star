@@ -63,7 +63,7 @@ code{background:#fff;border-radius:6px;padding:2px 8px;direction:ltr;unicode-bid
 import { parseHomework } from './js/engine.js';
 import { $, esc, hudHTML, fracHTML, toast, requireProfile, showAnswer } from './js/ui.js';
 
-const { profile, kid, persist } = requireProfile();
+const { profile, kid, persist } = await requireProfile();
 $('#hud').innerHTML = hudHTML(profile, kid);
 kid.homework = kid.homework || [];
 let parsed = { items: [], errors: [] };

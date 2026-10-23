@@ -31,7 +31,7 @@ import { SKILL_BY_ID, coreSkills, generateRound, generate, shuffle, stars } from
 import { recordAnswer, finishRound, completeMission } from './js/store.js';
 import { $, esc, hudHTML, QuestionView, toast, confetti, requireProfile } from './js/ui.js';
 
-const ctx = requireProfile();
+const ctx = await requireProfile();
 const { profile, kid, persist } = ctx;
 const params = new URLSearchParams(location.search);
 const mode = params.get('mode') || (params.get('hw') ? 'homework' : 'skill');
@@ -169,10 +169,11 @@ function summary() {
       ${missionDone ? `<p class="ok-text">🎯 משימה הושלמה!</p>` : ''}
       ${examHTML}
       <div class="row" style="justify-content:center;margin-top:16px">
-        ${mode === 'review' && !kid.review.length ? '' : `<button class="btn green" type="button" onclick="location.reload()">${exam ? 'עוד מבחן' : 'עוד סיבוב'} 🔄</button>`}
+        ${mode === 'review' && !kid.review.length ? '' : `<button class="btn green" type="button" data-again>${exam ? 'עוד מבחן' : 'עוד סיבוב'} 🔄</button>`}
         <a class="btn ghost" href="index.html">חזרה לעולם</a>
       </div>
     </div>`;
+  qEl.querySelector('[data-again]')?.addEventListener('click', async () => { await ctx.session.flush(); location.reload(); });
   drawBar();
 }
 
