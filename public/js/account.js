@@ -79,6 +79,7 @@ export async function signOut() {
 
 export function mountSignIn(el) {
   return loadClerk().then((clerk) => {
+    el.textContent = '';
     clerk.mountSignIn(el, { forceRedirectUrl: location.origin + '/index.html?signedin=1', signUpForceRedirectUrl: location.origin + '/index.html?signedin=1' });
     clerk.addListener(({ session }) => { if (session) { lsSet(SIGNED_KEY, '1'); location.href = 'index.html?signedin=1'; } });
     return clerk;
