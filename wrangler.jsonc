@@ -22,9 +22,12 @@
   ],
   "vars": {
     "CLERK_PUBLISHABLE_KEY": "pk_test_bGVnaWJsZS1pYmV4LTE4OTcuY2xlcmsuYWNjb3VudHMuZGV2JA",
-    "LEGACY_OWNER_FAMILY_ID": "53852750-9496-4d8b-bb8b-f814374709fb"
+    "LEGACY_OWNER_FAMILY_ID": "53852750-9496-4d8b-bb8b-f814374709fb",
+    // Clerk's PUBLIC key for English Star's instance (from https://legible-ibex-1897.clerk.accounts.dev/.well-known/jwks.json).
+    // It only verifies sign-ins; it is not a secret. If Clerk rotates its key, update it here.
+    "CLERK_JWT_KEY": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2ycB7iKhKlU428Eq7CNe\nVFQgZRzpefKTpeskZJJqrHn3U1UvZXKlOz2jawCvcw7F1AAthw+I9un9Tec9BNA6\nVoo0bVw/rEKlv3ol8UVyV3r+5j/MAGHAP3setJe+SiH5znFS7PjjQTBnNeuJnacy\n9K9yCjMJKc7ZHRcaSFiWe0omOj+t1y/avrLDPB+4DgAYKXMj9i9dyG+d1GET6soK\nkULYyqWpr4XWawoW496F5pLZnGEvZQJ6Zvbm1pQelODZ7y0aVudaeVz0WNP8tGTY\nYMqfZvXrJ/FmjgsmAz91bTVVCFqE8OGYNljnMDbTYXOyzC46K4XUBGn7gPyoBy9D\nYwIDAQAB\n-----END PUBLIC KEY-----"
   },
-  // CLERK_SECRET_KEY is a Worker secret (same value as English Star's) — never commit it.
+  // No Clerk secret key is needed on this Worker.
   "observability": {
     "enabled": true
   }

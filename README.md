@@ -71,17 +71,19 @@ waits for the save to finish; closing the page sends a last save.
 
 ### Configuration
 
-`wrangler.jsonc` binds English Star's D1 database and Clerk publishable key. The Worker also needs
-the **secret** `CLERK_SECRET_KEY` (same value as English Star's, from the Clerk dashboard → API keys),
-set in Cloudflare → math-star → Settings → Variables and secrets. Until it is set, guest mode works
-and sign-in shows "not ready yet".
+`wrangler.jsonc` binds English Star's D1 database and holds Clerk's publishable key and Clerk's
+**public** JWT key (`CLERK_JWT_KEY`, from `https://legible-ibex-1897.clerk.accounts.dev/.well-known/jwks.json`).
+The Worker only verifies sign-in tokens with that public key, so **no Clerk secret key is stored on
+Math Star** (English Star keeps the admin secret). If Clerk ever rotates the instance key, sign-in
+fails with 401 until `CLERK_JWT_KEY` is updated (alternatively set the secret `CLERK_SECRET_KEY`
+and remove `CLERK_JWT_KEY`; the Worker then fetches Clerk's keys itself).
 
 ## Develop
 
 ```sh
 npm install
 npm test        # engine tests: fuzzes every skill/level and cross-checks answers with an independent evaluator
-npm run dev     # needs .dev.vars with CLERK_SECRET_KEY for sign-in; guest mode works without it
+npm run dev     # sign-in works locally only with real Clerk tokens; guest mode works without them
 ```
 
 ## Deploy

@@ -10,7 +10,7 @@
 // Without sign-in the site keeps working with progress on the device (see public/js/store.js).
 
 import { Hono } from 'hono';
-import { clerkMiddleware, getAuth } from '@hono/clerk-auth';
+import { verifyToken } from '@clerk/backend';
 
 const app = new Hono();
 const MATH_GRADES = new Set(['K', '1', '2', '3', '4', '5', '6']);
@@ -26,27 +26,36 @@ app.get('/api/health', async (c) => {
     ok: database,
     service: 'math-star',
     database,
-    signIn: Boolean(c.env.CLERK_SECRET_KEY && c.env.CLERK_PUBLISHABLE_KEY)
+    signIn: signInConfigured(c.env)
   }, database ? 200 : 503);
 });
 
+// Sign-in check. A parent's browser sends its Clerk session token; the Worker verifies it
+// with Clerk's PUBLIC key (CLERK_JWT_KEY) — no admin secret is needed on this Worker.
+// CLERK_SECRET_KEY is accepted as a fallback (the token is then checked against Clerk's published keys).
+const signInConfigured = (env) => Boolean(env.CLERK_JWT_KEY || env.CLERK_SECRET_KEY);
 app.use('/api/*', async (c, next) => {
-  if (!c.env.CLERK_SECRET_KEY) return c.json({ error: 'sign_in_not_configured' }, 503);
-  return clerkMiddleware({
-    secretKey: c.env.CLERK_SECRET_KEY,
-    publishableKey: c.env.CLERK_PUBLISHABLE_KEY,
-    // Optional: Clerk's public JWT key for networkless verification (also used by local tests).
-    ...(c.env.CLERK_JWT_KEY ? { jwtKey: c.env.CLERK_JWT_KEY } : {})
-  })(c, next);
+  if (!signInConfigured(c.env)) return c.json({ error: 'sign_in_not_configured' }, 503);
+  const header = c.req.header('authorization') || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!token) return c.json({ error: 'unauthorized' }, 401);
+  const options = c.env.CLERK_JWT_KEY ? { jwtKey: c.env.CLERK_JWT_KEY } : { secretKey: c.env.CLERK_SECRET_KEY };
+  let payload = null;
+  try {
+    // Returns the token's claims and throws when the token is invalid or expired.
+    // (Older internal variants return { data, errors } — handle both.)
+    const result = await verifyToken(token, options);
+    payload = result?.errors ? null : (result?.data ?? result);
+  } catch (_) { payload = null; }
+  if (!payload?.sub) return c.json({ error: 'unauthorized' }, 401);
+  c.set('authUserId', payload.sub);
+  await next();
 });
 
 // Signed-in parent required; frozen families are blocked (same rule as English Star).
 app.use('/api/*', async (c, next) => {
-  const auth = getAuth(c);
-  if (!auth?.userId) return c.json({ error: 'unauthorized' }, 401);
-  c.set('authUserId', auth.userId);
   try {
-    const frozen = await c.env.DB.prepare('SELECT id, is_frozen, frozen_reason FROM families WHERE auth_user_id = ?').bind(auth.userId).first();
+    const frozen = await c.env.DB.prepare('SELECT id, is_frozen, frozen_reason FROM families WHERE auth_user_id = ?').bind(c.get('authUserId')).first();
     if (frozen?.is_frozen && frozen.id !== adminFamilyId(c) && c.req.path !== '/api/math/me') {
       return c.json({ error: 'account_frozen', message: 'This account has been temporarily frozen by the administrator.' }, 423);
     }
