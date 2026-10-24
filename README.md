@@ -1,6 +1,6 @@
 # Math Star ⭐
 
-Math practice web app for kids, in Hebrew — the sibling of [English Star](https://github.com/yosinv/english-star).
+Math practice web app for kids, in Hebrew — the sibling of [English Star](https://github.com/yosinv/english-star-public).
 
 The `main` branch is the production source for Cloudflare automatic deployment.
 
