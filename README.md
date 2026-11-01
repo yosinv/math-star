@@ -24,6 +24,16 @@ Static files are served from `public/`; the Worker lives in `src/worker.js` and 
 transfers to the test instead of memorising the booklet. Items that can't be auto-checked
 (drawing heights, "explain why", drawing on grid paper) stay on paper.
 
+`public/js/grade4.js` is the כיתה ד׳ track, aligned with the class test notice's 13 topics
+(1 מספרים עד 1,000,000 … 13 אלכסונים, צלעות מקבילות וסמוכות).
+
+### Test prep page
+
+`test.html` ("הכנה למבחן") lists the child's grade topics with a status for each (שולטת / כמעט /
+צריכה עוד תרגול), suggests what to practise today, and links to a practice test that covers every
+topic in order. The test date is saved per child; open `test.html?date=YYYY-MM-DD` on that child's
+profile to set it in one tap, and the child's world shows a countdown until the day.
+
 ### Boys and girls
 
 Each profile is בן or בת (profiles saved before this setting are בת). Text is written in the

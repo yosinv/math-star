@@ -113,7 +113,7 @@ export function registerGrade6(h) {
       return choice(id, { prompt: `מהו ערך הספרה ${dig} במספר ${N(nn)}?`, answer: N(val), choices: shuffle(r, opts.map(N)) });
     }
     if (L === 2) {
-      if (r() < 0.5) { const pos = ri(r, 0, 5); return num(id, { prompt: `איזו ספרה נמצאת במקום ה${names[pos]} במספר ${N(n)}?`, answer: d[pos] }); }
+      if (r() < 0.5) { const pos = ri(r, 0, 5); const the = ['המיליונים', 'מאות האלפים', 'עשרות האלפים', 'האלפים', 'המאות', 'העשרות', 'האחדות']; return num(id, { prompt: `איזו ספרה נמצאת במקום ${the[pos]} במספר ${N(n)}?`, answer: d[pos] }); }
       const add = pick(r, [1000, 10000, 100000]); return num(id, { prompt: `מה יהיה המספר ${N(n)} אם נוסיף לו ${N(add)}?`, answer: n + add });
     }
     const [to, unit] = pick(r, [['לאלפים', 1000], ['לעשרות אלפים', 10000], ['למאות אלפים', 100000], ['למיליונים', 1000000]]);

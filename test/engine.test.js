@@ -163,3 +163,8 @@ test('mergeKids: totals add, skills keep the further record, lists dedupe', () =
   assert.equal(mergeKids({ ...baseChild() }, b).xp, 50);
   assert.equal(toSharedAvatar('🚀'), '🧑‍🚀'); assert.equal(toSharedAvatar('🦊'), '🦊');
 });
+
+test('grade 4 follows the test notice topics 1–13', () => {
+  const topics = new Set(skillsForGrade('4').filter((s) => !s.extra).map((s) => s.topic));
+  for (let t = 1; t <= 13; t++) assert.ok(topics.has(String(t)), 'topic ' + t);
+});

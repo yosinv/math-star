@@ -310,6 +310,8 @@ function world() {
       <div class="deco">${profile.grade === 'K' ? '1 2 3' : '9×9'}</div>
     </section>
 
+    ${testBanner(kid)}
+
     <section class="panel">
       <h2>🎯 המשימות של היום</h2>
       <p class="sub">משלימות את שלושתן ומקבלות 💎 5 בונוס!</p>
@@ -353,9 +355,24 @@ function world() {
       <div class="tools">
         <a class="tool" href="games.html"><span class="e">🎮</span><span>משחקים<small>מרוץ מספרים · מגדל קוביות</small></span></a>
         <a class="tool" href="homework.html"><span class="e">📚</span><span>שיעורי בית<small>תרגילים מהדף של בית הספר</small></span></a>
+        <a class="tool" href="test.html"><span class="e">📝</span><span>הכנה למבחן<small>כל הנושאים · ספירה לאחור</small></span></a>
         <a class="tool" href="progress.html"><span class="e">📈</span><span>ההתקדמות שלי<small>גם להורים</small></span></a>
       </div>
     </section>`;
+}
+
+// Upcoming test (set per child on test.html): countdown banner on the child's world.
+function testBanner(kid) {
+  const t = kid.test;
+  if (!t || !/^\d{4}-\d{2}-\d{2}$/.test(t.date)) return '';
+  const [y, m, d] = t.date.split('-').map(Number), now = new Date();
+  const diff = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+  if (diff < 0) return '';
+  const day = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'][new Date(y, m - 1, d).getDay()];
+  const when = diff === 0 ? 'היום — בהצלחה! 🍀' : diff === 1 ? 'מחר!' : `עוד ${diff} ימים`;
+  return `<section class="panel"><a class="exam-cta test-cta" href="test.html">
+    <div><h3>📝 ${esc(t.title || 'מבחן')} · יום ${day} ${d}/${m}</h3><p>${when} · לדף ההכנה עם כל הנושאים</p></div>
+    <span class="btn orange">להכנה ←</span></a></section>`;
 }
 
 // Group a grade's skills by unit (grade 6 follows the review booklet's chapters).

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+<meta name="theme-color" content="#84d6ff">
+<title>Math Star — המבחן שלי</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+.count{display:inline-flex;align-items:center;gap:8px;margin-top:12px;background:#fff;color:var(--ink);border-radius:999px;padding:8px 16px;font-weight:900;font-size:20px;box-shadow:0 4px 0 #0002}
+.ready{display:flex;align-items:center;gap:12px;font-weight:900;margin-top:4px}
+.ready .track{background:#eef2f6;border-color:#dfe8ef}
+.ready .fill{background:var(--green)}
+.today{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.today a{display:flex;flex-direction:column;gap:6px;border-radius:18px;padding:14px;text-decoration:none;color:var(--ink);background:linear-gradient(145deg,#fff4c9,#ffe28a);border:3px solid #fff;box-shadow:0 5px 0 #274c5b2e;font-weight:800}
+.today a b{font-size:19px}
+.today a .go{align-self:flex-start;background:var(--ink);color:#fff;border-radius:12px;padding:6px 12px;font-weight:900}
+.topics{display:grid;gap:8px}
+.topic{display:grid;grid-template-columns:40px 1fr auto;align-items:center;gap:10px;padding:10px 12px;border-radius:16px;background:#f6f9fc;border:2px solid var(--line);text-decoration:none;color:var(--ink)}
+.topic .n{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#2f8b77;color:#fff;font-weight:900}
+.topic .t{font-weight:800;line-height:1.3}
+.topic .t small{display:block;color:var(--muted);font-weight:600;font-size:13px}
+.topic .s{font-weight:900;white-space:nowrap;font-size:15px}
+.unit-h{margin:14px 0 8px}
+.dateRow{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.dateRow input{max-width:220px}
+@media(max-width:560px){.today{grid-template-columns:1fr}.topic{grid-template-columns:34px 1fr}.topic .s{grid-column:2}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <a class="pill-btn" href="index.html">→ העולם שלי</a>
+    <div class="hud" id="hud"></div>
+  </div>
+  <div id="app"></div>
+</main>
+
+<script type="module">
+import { coreSkills, accuracy, stars, UNITS, TOPIC_TITLES, gradeInfo } from './js/engine.js';
+import { $, esc, hudHTML, toast, requireProfile } from './js/ui.js';
+
+const { profile, kid, persist } = await requireProfile();
+$('#hud').innerHTML = hudHTML(profile, kid);
+const params = new URLSearchParams(location.search);
+const validDate = (s) => /^\d{4}-\d{2}-\d{2}$/.test(s || '') && !Number.isNaN(Date.parse(s));
+
+// A link like test.html?date=2026-11-15 sets this child's test date in one tap.
+if (validDate(params.get('date'))) {
+  kid.test = { date: params.get('date'), title: params.get('title')?.slice(0, 40) || 'מבחן במתמטיקה' };
+  persist();
+  history.replaceState(null, '', 'test.html');
+}
+
+const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+function dayInfo(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const now = new Date();
+  const diff = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+  return { diff, label: `יום ${DAYS[new Date(y, m - 1, d).getDay()]}, ${d}/${m}` };
+}
+
+// Same rule as the progress page: "שולטת" = 2+ stars and 80% right in the last 10 answers.
+function skillStatus(id) {
+  const st = kid.skills[id];
+  if (!st || st.seen < 3) return 0;              // not practised yet
+  const a = accuracy(st, 10);
+  if (stars(st) >= 2 && a >= 0.8) return 3;      // mastered
+  if (a >= 0.6 || stars(st) >= 1) return 2;      // almost
+  return 1;                                      // needs more practice
+}
+const LABEL = { 0: ['· עוד לא תרגלנו', 'lvl-none'], 1: ['🔁 צריכה עוד תרגול', 'lvl-low'], 2: ['🟡 כמעט', 'lvl-mid'], 3: ['✅ שולטת', 'lvl-good'] };
+
+// Topics: the grade's own topic list when there is one (grade 4 = the test notice), else one per skill.
+function topics() {
+  const list = coreSkills(profile.grade);
+  const titles = TOPIC_TITLES[profile.grade];
+  const byTopic = new Map();
+  for (const s of list) {
+    const key = s.topic || s.id;
+    if (!byTopic.has(key)) byTopic.set(key, { key, unit: s.unit, title: titles?.[key] || s.title, skills: [] });
+    byTopic.get(key).skills.push(s);
+  }
+  return [...byTopic.values()].map((t) => {
+    const sts = t.skills.map((s) => skillStatus(s.id));
+    const status = sts.every((x) => x === 3) ? 3 : sts.every((x) => x === 0) ? 0 : sts.includes(1) ? 1 : 2;
+    const next = t.skills.find((s) => skillStatus(s.id) < 3) || t.skills[0];
+    return { ...t, status, next };
+  });
+}
+
+function render() {
+  const g = gradeInfo(profile.grade);
+  const test = kid.test && validDate(kid.test.date) ? kid.test : null;
+  const info = test ? dayInfo(test.date) : null;
+  const ts = topics();
+  const mastered = ts.filter((t) => t.status === 3).length;
+  const order = { 1: 0, 0: 1, 2: 2, 3: 3 };
+  const todayPicks = [...ts].sort((a, b) => order[a.status] - order[b.status]).filter((t) => t.status < 3).slice(0, 2);
+  const units = UNITS[profile.grade];
+  const count = !info ? '' : info.diff > 1 ? `⏳ עוד ${info.diff} ימים` : info.diff === 1 ? '⏳ המבחן מחר!' : info.diff === 0 ? '🍀 המבחן היום — בהצלחה!' : '✔️ המבחן כבר היה';
+
+  $('#app').innerHTML = `
+    <section class="banner" style="background:linear-gradient(135deg,#2f8b77,#3fbfa0)">
+      <span class="kicker">📝 הכנה למבחן · ${esc(g.label)}</span>
+      <h1>${test ? esc(test.title) : 'הכנה למבחן'}</h1>
+      <p>${test ? esc(info.label) + ' · ' : ''}${ts.length} נושאים. כל נושא — תרגול עם מספרים חדשים בכל פעם.</p>
+      ${count ? `<div class="count">${count}</div>` : ''}
+      <div class="deco">✎</div>
+    </section>
+
+    ${test ? '' : `<section class="panel">
+      <h2>📅 מתי המבחן?</h2>
+      <p class="sub">נציג ספירה לאחור ונבנה תרגול לכל יום.</p>
+      <div class="dateRow"><input class="f" type="date" id="dt"><button class="btn green" id="saveDt" type="button">שמירה</button></div>
+    </section>`}
+
+    <section class="panel">
+      <h2>🎯 מוכנות למבחן</h2>
+      <div class="ready"><span class="ltr">${mastered}/${ts.length}</span><div class="track"><div class="fill" style="width:${Math.round((mastered / ts.length) * 100)}%"></div></div><span>נושאים בשליטה</span></div>
+      ${todayPicks.length ? `<h3 style="margin:16px 0 8px">מה מתרגלים היום?</h3>
+      <div class="today">${todayPicks.map((t) => `
+        <a href="practice.html?skill=${t.next.id}"><span>${t.next.emoji} נושא ${esc(t.key)}</span><b>${esc(t.title)}</b><span class="${LABEL[t.status][1]}">${LABEL[t.status][0]}</span><span class="go">מתחילות ←</span></a>`).join('')}
+      </div>` : `<p class="ok-text" style="margin-top:12px">🎉 כל הנושאים בשליטה! עכשיו מבחן תרגול אחד ביום כדי לשמור על הכושר.</p>`}
+      <div class="exam-cta" style="margin-top:16px">
+        <div><h3>📝 מבחן תרגול</h3><p>שאלות מכל ${ts.length} הנושאים — ניסיון אחד, בלי רמזים. בדיוק כמו במבחן.</p></div>
+        <a class="btn orange" href="practice.html?mode=exam">התחילי מבחן ←</a>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>📚 כל הנושאים</h2>
+      <p class="sub">לוחצים על נושא כדי לתרגל אותו.</p>
+      ${(units ? units.filter((u) => u.id !== 'x') : [{ id: undefined, title: '' }]).map((u) => {
+        const list = ts.filter((t) => u.id === undefined || t.unit === u.id);
+        if (!list.length) return '';
+        return `${u.title ? `<h3 class="unit-h">${esc(u.title)}</h3>` : ''}<div class="topics">${list.map((t) => `
+          <a class="topic" href="practice.html?skill=${t.next.id}">
+            <span class="n">${esc(t.key)}</span>
+            <span class="t">${esc(t.title)}${t.skills.length > 1 ? `<small>${t.skills.map((s) => esc(s.title)).join(' · ')}</small>` : ''}</span>
+            <span class="s ${LABEL[t.status][1]}">${LABEL[t.status][0]}</span>
+          </a>`).join('')}</div>`;
+      }).join('')}
+    </section>
+
+    ${test ? `<section class="panel">
+      <h2>⚙️ תאריך המבחן</h2>
+      <div class="dateRow"><input class="f" type="date" id="dt" value="${esc(test.date)}"><button class="btn ghost" id="saveDt" type="button">עדכון</button><button class="btn ghost" id="clearDt" type="button">הסרה</button></div>
+    </section>` : ''}`;
+
+  $('#saveDt')?.addEventListener('click', () => {
+    const v = $('#dt').value;
+    if (!validDate(v)) return toast('בחרו תאריך');
+    kid.test = { date: v, title: kid.test?.title || 'מבחן במתמטיקה' };
+    persist(); toast('✅ נשמר'); render();
+  });
+  $('#clearDt')?.addEventListener('click', () => { delete kid.test; persist(); render(); });
+}
+render();
+</script>
+</body>
+</html>

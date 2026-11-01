@@ -17,6 +17,11 @@ export function fracHTML(s) {
 export function exprHTML(expr, filled) {
   let h = fracHTML(expr);
   const blank = filled !== undefined ? `<span class="q">${fracHTML(filled)}</span>` : '<span class="q">?</span>';
+  // A blank inside a fraction ("?/6", "2/?") is drawn as a stacked fraction too.
+  if (/\?\/\d+|\d+\/\?/.test(h)) {
+    return h.replace(/\?\/(\d+)/, `<span class="frac"><span>${blank}</span><span>$1</span></span>`)
+      .replace(/(\d+)\/\?/, `<span class="frac"><span>$1</span><span>${blank}</span></span>`);
+  }
   h = h.replace(/\?|◻/, blank);
   return h;
 }
@@ -111,6 +116,9 @@ export function visualHTML(v) {
     case 'compare':
       return `<div class="visual"><div class="grp">${rep(`<span>${e}</span>`, v.a)}</div><span class="op">?</span><div class="grp">${rep(`<span>${e}</span>`, v.b)}</div></div>`;
     case 'numberline': return numberLineSVG(v);
+    case 'nline': return stepLineSVG(v);
+    case 'fracbar': return fracBarsSVG(v);
+    case 'quad': return quadSVG(v);
     case 'rect': case 'para': case 'lshape': case 'frame': return shapeSVG(v);
     default: return '';
   }
@@ -133,6 +141,55 @@ function numberLineSVG({ from, to, parts, at }) {
     <line x1="${x0 - 8}" y1="${y}" x2="${x1 + 8}" y2="${y}" stroke-width="3"/>${ticks}
     <path class="accent" d="M${ax} ${y - 16} l-9 -14 h18 z"/>${txt(ax, 22, '?', 'middle', 'class="accent-t"')}
   </svg></div>`;
+}
+
+// Number line with any start and step: n equal jumps; labels only at the given tick indexes.
+function stepLineSVG({ start, step, n, at, labels = [0, n] }) {
+  const W = 440, x0 = 34, x1 = W - 34, y = 62;
+  const X = (i) => x0 + (i / n) * (x1 - x0);
+  const fmtN = (v) => (Math.abs(v) >= 1000 ? v.toLocaleString('en-US') : String(v));
+  let ticks = '';
+  for (let i = 0; i <= n; i++) {
+    const lab = labels.includes(i);
+    ticks += `<line x1="${X(i)}" y1="${y - (lab ? 13 : 9)}" x2="${X(i)}" y2="${y + (lab ? 13 : 9)}" stroke-width="${lab ? 3 : 2}"/>`;
+    if (lab) ticks += txt(X(i), y + 36, fmtN(start + i * step), 'middle', 'class="lbl sm"');
+  }
+  return `<div class="visual"><svg ${SVG_STYLE} viewBox="0 0 ${W} 108" aria-label="ישר מספרים">
+    <line x1="${x0 - 10}" y1="${y}" x2="${x1 + 10}" y2="${y}" stroke-width="3"/>${ticks}
+    <path class="accent" d="M${X(at)} ${y - 17} l-9 -14 h18 z"/>${txt(X(at), 22, '?', 'middle', 'class="accent-t"')}
+  </svg></div>`;
+}
+
+// One bar per fraction: d equal parts, the first n shaded.
+function fracBarsSVG({ bars }) {
+  const W = 360, bh = 46, gap = 18, x0 = 10, w = W - 20;
+  const H = bars.length * (bh + gap) - gap + 8;
+  const body = bars.map(({ n, d }, k) => {
+    const y = 4 + k * (bh + gap), cw = w / d;
+    let cells = '';
+    for (let i = 0; i < d; i++) cells += `<rect x="${(x0 + i * cw).toFixed(1)}" y="${y}" width="${cw.toFixed(1)}" height="${bh}" class="${i < n ? 'cellOn' : 'cellOff'}"/>`;
+    return cells;
+  }).join('');
+  return `<div class="visual"><svg ${SVG_STYLE} viewBox="0 0 ${W} ${H}" aria-label="שבר">${body}</svg></div>`;
+}
+
+// Quadrilateral ABCD (A top-left, B top-right, C bottom-right, D bottom-left) with marked segments.
+function quadSVG({ kind = 'rect', mark = [] }) {
+  const P = {
+    rect: { A: [60, 30], B: [300, 30], C: [300, 160], D: [60, 160] },
+    square: { A: [115, 25], B: [255, 25], C: [255, 165], D: [115, 165] },
+    para: { A: [110, 30], B: [320, 30], C: [260, 160], D: [50, 160] },
+    trap: { A: [120, 30], B: [250, 30], C: [320, 160], D: [40, 160] }
+  }[kind] || {};
+  const seg = (a, b, cls) => `<line x1="${P[a][0]}" y1="${P[a][1]}" x2="${P[b][0]}" y2="${P[b][1]}" class="${cls}"/>`;
+  const norm = (m) => m.split('').sort().join('');
+  const marked = new Set(mark.map(norm));
+  let out = `<polygon class="fillA" points="${['A', 'B', 'C', 'D'].map((k) => P[k].join(',')).join(' ')}"/>`;
+  for (const [a, b] of [['A', 'B'], ['B', 'C'], ['C', 'D'], ['D', 'A']]) if (marked.has(norm(a + b))) out += seg(a, b, 'markSide');
+  for (const [a, b] of [['A', 'C'], ['B', 'D']]) if (marked.has(norm(a + b))) out += seg(a, b, 'markDiag');
+  const off = { A: [-16, -8], B: [16, -8], C: [16, 22], D: [-16, 22] };
+  for (const k of ['A', 'B', 'C', 'D']) out += txt(P[k][0] + off[k][0], P[k][1] + off[k][1], k, 'middle', 'class="vtx"');
+  return `<div class="visual"><svg ${SVG_STYLE} viewBox="0 0 370 195" aria-label="מרובע ABCD">${out}</svg></div>`;
 }
 
 function shapeSVG(v) {

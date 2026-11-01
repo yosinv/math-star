@@ -27,7 +27,7 @@
 </main>
 
 <script type="module">
-import { SKILL_BY_ID, coreSkills, generateRound, generate, shuffle, stars } from './js/engine.js';
+import { SKILL_BY_ID, coreSkills, generateRound, generate, shuffle, stars, UNITS } from './js/engine.js';
 import { recordAnswer, finishRound, completeMission } from './js/store.js';
 import { $, esc, hudHTML, QuestionView, toast, confetti, requireProfile } from './js/ui.js';
 
@@ -54,14 +54,14 @@ if (mode === 'review') {
   }
 } else if (exam) {
   const list = coreSkills(profile.grade);
-  const order = profile.grade === '6' ? list : shuffle(Math.random, list);
+  const order = UNITS[profile.grade] ? list : shuffle(Math.random, list); // topic order for booklet/notice grades
   const n = Math.max(12, Math.min(20, list.length + 4));
   for (let i = 0; i < n; i++) {
     const s = i < order.length ? order[i] : order[Math.floor(Math.random() * order.length)];
     const lvl = Math.max(2, kid.skills[s.id]?.level || 1);
     problems.push(generate(s.id, lvl));
   }
-  if (profile.grade !== '6') problems = shuffle(Math.random, problems);
+  if (!UNITS[profile.grade]) problems = shuffle(Math.random, problems);
   tag = '📝 מבחן תרגול';
 } else if (mode === 'homework') {
   const set = kid.homework.find((h) => h.id === params.get('hw'));

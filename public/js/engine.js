@@ -1,5 +1,6 @@
 // Math Star engine — pure functions, no DOM. Runs in the browser and in Node tests.
 import { registerGrade6, GRADE6_UNITS } from './grade6.js';
+import { registerGrade4, GRADE4_UNITS, GRADE4_TOPICS } from './grade4.js';
 //
 // A problem looks like:
 //   { skill, kind: 'number' | 'choice', prompt, expr, answer, choices?, visual?, hint?, key }
@@ -252,45 +253,8 @@ skill('g3_word', '3', 'בעיות מילוליות', '📖', (L, r) => {
   return num('g3_word', { prompt: `${g} ${v('קנתה', 'קנה')} ${a} חבילות, ובכל חבילה ${b} מדבקות. ${v('היא נתנה', 'הוא נתן')} ${c} מדבקות ${v('לאחותה', 'לאחיו')}. כמה מדבקות נשארו ל${g}?`, answer: a * b - c });
 });
 
-// ===== כיתה ד׳ =====
-skill('g4_mult', '4', 'כפל במאונך', '🚀', (L, r) => {
-  const a = L === 1 ? ri(r, 11, 34) : L === 2 ? ri(r, 12, 99) : ri(r, 102, 499);
-  const b = L === 1 ? ri(r, 2, 3) : ri(r, 3, 9);
-  return num('g4_mult', { expr: `${a} × ${b} = ?`, answer: a * b, hint: { type: 'text', text: `פרקי: ${a} = ${a - (a % 10)} + ${a % 10}` } });
-});
-
-skill('g4_divrem', '4', 'חילוק עם שארית', '🧁', (L, r) => {
-  if (L === 1) { const d = ri(r, 2, 6), q = ri(r, 11, 25); return num('g4_divrem', { expr: `${d * q} : ${d} = ?`, answer: q }); }
-  if (L === 3) { const d = ri(r, 3, 9), q = ri(r, 21, 99); return num('g4_divrem', { expr: `${d * q} : ${d} = ?`, answer: q }); }
-  const d = ri(r, 3, 9), q = ri(r, 3, 12), rem = ri(r, 1, d - 1), n = d * q + rem;
-  const s = (qq, rr) => `${qq} ושארית ${rr}`;
-  const opts = [s(q, rem), s(q + 1, rem), s(q, rem === 1 ? 2 : rem - 1), s(q - 1, rem + d > n ? 0 : rem + d)];
-  return choice('g4_divrem', { expr: `${n} : ${d} = ?`, answer: s(q, rem), choices: shuffle(r, [...new Set(opts)]) });
-});
-
-skill('g4_order', '4', 'סדר פעולות', '🎯', (L, r) => {
-  const a = ri(r, 2, 9), b = ri(r, 2, 9), c = ri(r, 2, 9), d = ri(r, 2, 6);
-  if (L === 1) return num('g4_order', { expr: `${a} + ${b} × ${c} = ?`, answer: a + b * c, hint: { type: 'text', text: 'כפל וחילוק לפני חיבור וחיסור' } });
-  if (L === 2) return r() < 0.5
-    ? num('g4_order', { expr: `(${a} + ${b}) × ${c} = ?`, answer: (a + b) * c, hint: { type: 'text', text: 'קודם מה שבסוגריים' } })
-    : (() => { const x = b * c + ri(r, 1, 20); return num('g4_order', { expr: `${x} − ${b} × ${c} = ?`, answer: x - b * c, hint: { type: 'text', text: 'כפל לפני חיסור' } }); })();
-  return num('g4_order', { expr: `${a} × ${b} + ${c * d} : ${d} = ?`, answer: a * b + c, hint: { type: 'text', text: 'כפל וחילוק קודם, ואז חיבור' } });
-});
-
-skill('g4_frac_cmp', '4', 'משווות שברים', '🍰', (L, r) => {
-  let A, B;
-  if (L === 1) { const d = ri(r, 3, 10); const x = ri(r, 1, d - 1); let y = ri(r, 1, d - 1); if (r() < 0.15) y = x; A = [x, d]; B = [y, d]; }
-  else if (L === 2) { const n = ri(r, 1, 4); const x = ri(r, n + 1, 10); let y = ri(r, n + 1, 10); if (r() < 0.15) y = x; A = [n, x]; B = [n, y]; }
-  else { const d = pick(r, [2, 3, 4, 5]); const k = pick(r, [2, 3]); const x = ri(r, 1, d - 1); A = [x, d]; const y = r() < 0.25 ? x * k : ri(r, 1, d * k - 1); B = [y, d * k]; }
-  const lhs = A[0] * B[1], rhs = B[0] * A[1];
-  return choice('g4_frac_cmp', { prompt: 'איזה סימן מתאים?', expr: `${fracStr(A)} ◻ ${fracStr(B)}`, answer: lhs > rhs ? '>' : lhs < rhs ? '<' : '=', choices: ['<', '=', '>'] });
-});
-
-skill('g4_frac_of', '4', 'שבר מכמות', '🍬', (L, r) => {
-  const [n, d] = L === 1 ? [1, pick(r, [2, 3, 4])] : L === 2 ? [1, pick(r, [5, 6, 10])] : pick(r, [[2, 3], [3, 4], [2, 5], [3, 5]]);
-  const total = d * ri(r, 2, 10);
-  return num('g4_frac_of', { prompt: `כמה זה ${n}/${d} מ-${total}?`, answer: (total / d) * n, hint: { type: 'text', text: `קודם ${total} : ${d} = ${total / d}${n > 1 ? `, ואז כפול ${n}` : ''}` } });
-});
+// ===== כיתה ד׳ — aligned with the class test notice (see grade4.js) =====
+registerGrade4({ skill, ri, pick, shuffle, num, choice, numberChoices, fractionChoices, fracStr, person });
 
 // ===== כיתה ה׳ =====
 skill('g5_frac_add', '5', 'חיבור וחיסור שברים', '🧩', (L, r) => {
@@ -350,7 +314,9 @@ export const SKILL_BY_ID = Object.fromEntries(SKILLS.map((s) => [s.id, s]));
 export const skillsForGrade = (grade) => SKILLS.filter((s) => s.grade === grade);
 // Core skills drive missions and exam mode; "extra" ones are shown but not pushed.
 export const coreSkills = (grade) => skillsForGrade(grade).filter((s) => !s.extra);
-export const UNITS = { '6': GRADE6_UNITS };
+export const UNITS = { '4': GRADE4_UNITS, '6': GRADE6_UNITS };
+// Topic titles for the test page (grade 4 follows the test notice's numbering).
+export const TOPIC_TITLES = { '4': Object.fromEntries(GRADE4_TOPICS) };
 export const gradeInfo = (grade) => GRADES.find((g) => g.id === grade) || GRADES[0];
 
 export function generate(skillId, level = 1, rng = Math.random) {
