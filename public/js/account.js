@@ -4,8 +4,12 @@
 // Without sign-in, nothing here runs and progress stays on the device.
 import './parent-pin.js'; // defines window.ParentPin (English Star's PIN keypad)
 
-const CLERK_FAPI = 'https://legible-ibex-1897.clerk.accounts.dev';
-const CLERK_PK = 'pk_test_bGVnaWJsZS1pYmV4LTE4OTcuY2xlcmsuYWNjb3VudHMuZGV2JA';
+import { onOldAddress } from './move.js';
+
+// English Star's production Clerk app. It only runs on englishstarkids.com and its subdomains,
+// so on the old workers.dev address sign-in is not offered (see move.js).
+const CLERK_FAPI = 'https://clerk.englishstarkids.com';
+const CLERK_PK = 'pk_live_Y2xlcmsuZW5nbGlzaHN0YXJraWRzLmNvbSQ';
 const SIGNED_KEY = 'mathStarSignedIn'; // hint only: "a parent signed in on this device before"
 
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -25,6 +29,7 @@ function addScript(src, attrs = {}) {
 
 let clerkPromise = null;
 export function loadClerk() {
+  if (onOldAddress()) return Promise.reject(new Error('sign-in is on ' + 'math.englishstarkids.com'));
   if (!clerkPromise) {
     clerkPromise = (async () => {
       await Promise.all([

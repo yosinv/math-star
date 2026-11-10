@@ -21,6 +21,8 @@ import { $, $$, esc, hudHTML, levelBarHTML, toast } from './js/ui.js';
 import { localize } from './js/gender.js';
 import { openSession, cloudProfile, hasDeviceProgress, mergeKids, toSharedAvatar } from './js/session.js';
 import { mountSignIn, signOut, api, ApiError, parentEmail } from './js/account.js';
+import { onOldAddress, moveLink, unpackState, applyMove, HOME_ORIGIN } from './js/move.js';
+import { save } from './js/store.js';
 
 const app = $('#app');
 const params = new URLSearchParams(location.search);
@@ -29,7 +31,8 @@ const profileOf = (id) => session.state.profiles.find((p) => p.id === id);
 const later = () => { try { return sessionStorage.getItem('mathStarImportLater') === '1'; } catch { return false; } };
 
 async function start() {
-  if (params.has('signin')) return signInScreen();
+  if (location.hash.startsWith('#move=')) await receiveMove();
+  if (params.has('signin')) return onOldAddress() ? goToNewAddress() : signInScreen();
   session = await openSession({ onSaveError: () => toast('⚠️ ההתקדמות לא נשמרה — ננסה שוב כשיהיה חיבור', 4000) });
   if (session.mode === 'cloud-error') return cloudError(session.error);
   if (session.mode === 'cloud' && hasDeviceProgress() && !later()) return importScreen();
@@ -53,8 +56,28 @@ async function openChild(id) {
   world();
 }
 
+// ---------- moving from the old address (workers.dev) ----------
+async function goToNewAddress() {
+  try { location.href = await moveLink(load()); } catch { location.href = HOME_ORIGIN + '/index.html'; }
+}
+async function receiveMove() {
+  const packed = location.hash.slice('#move='.length);
+  history.replaceState(null, '', location.pathname + location.search); // drop the data from the address bar
+  try {
+    const { state, added, updated } = applyMove(load(), await unpackState(packed));
+    save(state);
+    if (added || updated) setTimeout(() => toast('📦 ההתקדמות מהכתובת הקודמת עברה לכאן', 3500), 300);
+  } catch { setTimeout(() => toast('⚠️ לא הצלחנו להעביר את ההתקדמות. היא עדיין שמורה בכתובת הקודמת.', 5000), 300); }
+}
+function movedNotice() {
+  if (!onOldAddress()) return '';
+  return `<div class="acct" style="background:#fff4d6"><span>📦 Math Star עבר לכתובת חדשה: <b class="ltr">math.englishstarkids.com</b>. כניסת הורים עובדת רק שם.</span>
+    <button class="pill-btn" type="button" data-move>לעבור עם ההתקדמות ➜</button></div>`;
+}
+
 // ---------- account bar (shared screens) ----------
 function accountBar() {
+  if (onOldAddress()) return movedNotice();
   if (session?.mode === 'cloud') {
     return `<div class="acct"><span>☁️ מחוברים${parentEmail() ? ' · <span class="ltr">' + esc(parentEmail()) + '</span>' : ''} · ההתקדמות נשמרת בחשבון המשפחה, יחד עם English Star</span>
       <button class="pill-btn" type="button" data-signout>יציאה</button></div>`;
@@ -64,6 +87,7 @@ function accountBar() {
     <p class="acct-sub">עם אותו חשבון של English Star: אותם ילדים, וההתקדמות נשמרת בכל מכשיר.</p>`;
 }
 function wireAccountBar() {
+  $('[data-move]')?.addEventListener('click', goToNewAddress);
   $('[data-signout]')?.addEventListener('click', async () => { await session.flush?.(); await signOut(); location.href = 'index.html'; });
 }
 
@@ -170,6 +194,7 @@ function picker() {
       <span class="kicker">⭐ MATH STAR</span>
       <h1>מי משחק/ת היום?</h1>
       <p>${cloud ? 'הילדים של המשפחה — אותם ילדים כמו ב-English Star.' : 'בחרו את הדמות שלכם ונמשיך מאיפה שעצרנו.'}</p>
+      ${cloud && !st.profiles.length ? `<p>כבר יש לכם ילדים ב-English Star? היכנסו פעם אחת ל-<a class="ltr" href="https://englishstarkids.com/family" style="color:inherit;font-weight:800">englishstarkids.com</a> עם אותו חשבון, וחזרו לכאן — הם יופיעו.</p>` : ''}
       <div class="deco">1+2=3</div>
     </section>
     <section class="panel" style="background:#ffffffcc">
@@ -302,6 +327,7 @@ function world() {
 
   app.innerHTML = `
     <div class="top"><div class="hud">${hudHTML(profile, kid)}</div></div>
+    ${movedNotice()}
     <section class="banner" style="background:linear-gradient(135deg,${g.color},#a986ff)">
       <span class="kicker">⭐ MATH STAR · ${esc(g.label)}</span>
       <h1>${esc(profile.avatar)} העולם של ${esc(profile.name)}</h1>
@@ -359,6 +385,7 @@ function world() {
         <a class="tool" href="progress.html"><span class="e">📈</span><span>ההתקדמות שלי<small>גם להורים</small></span></a>
       </div>
     </section>`;
+  $('[data-move]')?.addEventListener('click', goToNewAddress);
 }
 
 // Upcoming test (set per child on test.html): countdown banner on the child's world.

@@ -6,7 +6,7 @@ tags: [project/math-star, kids, cloudflare, handoff]
 status: live
 updated: 2026-11-10
 repo: https://github.com/yosinv/math-star
-live: https://math-star.yosinv.workers.dev
+live: https://math.englishstarkids.com
 related: "[[English Star]]"
 ---
 
@@ -23,7 +23,7 @@ related: "[[English Star]]"
 A Hebrew (RTL) math-practice website for Yosi's kids, built as the sibling of [[English Star]]
 (same look — "Block World", same rewards: XP, gems, daily streak, levels).
 
-- **Live:** https://math-star.yosinv.workers.dev
+- **Live:** https://math.englishstarkids.com (since Nov 2026; the old https://math-star.yosinv.workers.dev is device-only and offers to move progress)
 - **Repo:** `yosinv/math-star` (private). Renamed on 21 Oct from `math-start` — GitHub redirects the old name.
 - **Deploy:** Cloudflare Workers Builds, Worker `math-star`. Every push to `main` builds and deploys
   (no build command; deploy command `npx wrangler deploy`).
@@ -62,12 +62,13 @@ math-star/
 
 ### Data and accounts (same model as English Star)
 
-- **Parent sign-in:** English Star's Clerk app — dev instance `legible-ibex-1897` ("No Production Environment").
+- **Parent sign-in:** English Star's **production** Clerk app (`pk_live…`, frontend `https://clerk.englishstarkids.com`). It only runs on englishstarkids.com and its subdomains — that is why Math Star moved to `math.englishstarkids.com`. (Until Nov 2026 it used the old dev instance `legible-ibex-1897`.)
 - **Kids:** rows in English Star's D1 (`families`, `children`). Same kids on both sites; a child added in Math Star appears in English Star.
 - **Parent PIN:** English Star's `parent_pins` / `parent_unlocks` tables (PBKDF2, 5 tries → 15-min lock, 15-min unlock token). Set/changed only on English Star's "My Family" page.
 - **Math progress:** `math_child_state (child_id PK → children ON DELETE CASCADE, gender, math_grade, state_json, version)`. Created by the Worker on first request (`CREATE TABLE IF NOT EXISTS`) — no migration file.
 - **Guest mode (kept on purpose, Yosi's choice):** without sign-in, profiles + progress stay in the browser (`mathstar.v1`). The first sign-in on a device with progress offers to move it into the account (match by name or add the child), then archives a dated copy and clears the device.
-- **Sign-in check:** the Worker verifies the Clerk session JWT with Clerk's **public** key (`CLERK_JWT_KEY` in `wrangler.jsonc`, from `https://legible-ibex-1897.clerk.accounts.dev/.well-known/jwks.json`). **No Clerk secret is stored on Math Star.** `CLERK_SECRET_KEY` still works as a fallback if ever set.
+- **Sign-in check:** the Worker reads Clerk's **public** keys from `CLERK_FAPI_URL/.well-known/jwks.json` (cached 1 h, refetched for a new key id), verifies the session JWT and requires `iss` = `CLERK_FAPI_URL`. **No Clerk secret is stored on Math Star**; key rotation needs no change. `CLERK_JWT_KEY` (pasted PEM) overrides the fetch; `CLERK_SECRET_KEY` remains a last fallback.
+- **Families are created only when a parent adds a child here** — never on a visit. English Star moves a family from the old dev sign-in to the new production ID on the parent's first English Star visit, and only if no family exists yet for the new ID; an empty family made by Math Star first would hide the real one.
 - **Rules:** a family only sees its own children (404 otherwise); frozen families get 423; saving progress needs no PIN; adding/renaming a child and *changing* boy/girl or grade needs the PIN (the *first* boy/girl + grade choice on a child's first visit is open).
 
 ### API (all need a signed-in parent; `GET /api/health` is public)
@@ -107,7 +108,7 @@ math-star/
 
 - [ ] **Sign in once on Math Star with the English Star account** and confirm the family's kids appear (Clerk widget renders on the live site; a full sign-in was never confirmed back).
 - [ ] **On the girls' device:** sign in → accept the offer to move device progress into the account (until then progress lives only in that browser; on iPhone/iPad Safari can wipe it after ~7 days unused — open from the Home-Screen icon).
-- [ ] **Alma (before 15/11):** on her profile confirm the grade is **כיתה ד׳**, then open once: `https://math-star.yosinv.workers.dev/test.html?date=2026-11-15` 📅 2026-11-14
+- [ ] **Alma (before 15/11):** on her profile confirm the grade is **כיתה ד׳**, then open once: `https://math.englishstarkids.com/test.html?date=2026-11-15` (if her progress is on the old address, tap "לעבור עם ההתקדמות" there first) 📅 2026-11-14
 - [ ] Send **pages 1 and 3** of Alma's test notice — only page 2 was received; they may contain sample questions or more topics.
 
 ## 6. Open — for Claude Code (suggested next work)
@@ -115,8 +116,9 @@ math-star/
 - [ ] **Verify live sign-in end to end** (with Yosi present): `GET /api/math/me` returns the real family; pick a child → בן/בת setup → answer → `PUT …/state` saved → reload shows it.
 - [ ] **Move the browser tests into the repo.** The Playwright e2e scripts (guest flow, signed-in flow with a fake Clerk + self-signed JWT, boy-wording scan, grade-4 pages) and the API test (`api.test.mjs`) lived only in the old session's scratch folder. Recreate them under `test/e2e/` and `test/api/` (see §8 for how they worked).
 - [ ] **After 15/11:** ask how Alma's test went; consider adding the next unit for ד׳ and moving `g4_frac_of` out of "בהמשך השנה".
-- [ ] **Clerk production instance:** English Star's Clerk app is still a *development* instance. If it moves to production, update `CLERK_PUBLISHABLE_KEY`, `CLERK_JWT_KEY` and the Clerk FAPI URL in `public/js/account.js` (`CLERK_FAPI`, `CLERK_PK`).
-- [ ] **Clerk key rotation watch:** if sign-in suddenly returns 401 for everyone, refresh `CLERK_JWT_KEY` from the JWKS URL above.
+- [x] **Clerk production instance:** moved to English Star's production Clerk, new address `math.englishstarkids.com`, public keys fetched (no rotation watch needed), no empty families, device progress carried from the old address (branch `claude/clerk-production`).
+- [ ] After that merge: confirm the custom domain `math.englishstarkids.com` is attached (Cloudflare → math-star → Settings → Domains & Routes) and `/api/health` there shows `"signIn": true`.
+- [ ] Later, once the kids have moved: consider redirecting the old workers.dev address to the new one (not done now, because each address keeps its own device progress).
 - [ ] Optional: a parent "family dashboard" in Math Star (kids side by side), and an English Star ↔ Math Star cross-link.
 
 ## 7. Traps already hit (read before debugging)
@@ -131,7 +133,7 @@ math-star/
 > Not a code problem — use **Retry build** on the build page.
 
 - `/index.html?…` is redirected to `/?…` by Cloudflare (`html_handling: auto-trailing-slash`) — match URLs by query, not path.
-- `workers.dev` is blocked from cloud sandboxes, and `robots.txt` blocks web-fetch tools — check the live site through a real browser.
+- `workers.dev` and `englishstarkids.com` are blocked from cloud sandboxes (so is `clerk.englishstarkids.com`), and `robots.txt` blocks web-fetch tools — check the live site through a real browser.
 - Local testing: build a local D1 from **English Star's** `migrations/*.sql`, then `wrangler dev --local --persist-to <dir>`. Kill old `workerd`/`wrangler` processes before deleting the D1 dir (a live process on a deleted DB file → `SQLITE_READONLY_DBMOVED`). Don't `pkill -f wrangler` from a shell whose command line contains "wrangler" — it kills itself.
 - `@clerk/backend` top-level `verifyToken()` **returns the claims and throws on failure** (not `{data, errors}`); the Worker handles both.
 - Saving: a link click waits for the pending save; "עוד סיבוב" flushes before reload; `pagehide` sends a keepalive PUT. Don't add navigation that bypasses these.
@@ -139,7 +141,7 @@ math-star/
 ## 8. How it was tested (recreate this)
 
 - `npm test` — fuzzes every skill × level (hundreds of problems each, run with `SEED=1..20`), checks no NaN/negatives, unique choices, answer present, and **cross-checks every expression answer with the homework parser's exact-fraction evaluator**; tests adaptivity, homework parsing, `gtext`, verb agreement, `mergeKids`, grade-4 topic coverage.
-- **API tests:** local D1 (English Star schema + seed: 2 families, kids, PIN 1234), Worker run with `CLERK_JWT_KEY` = a locally generated RSA public key, tokens signed with its private key. Covered: no/forged/expired token → 401, family isolation → 404, state save/version/413/400, PIN required/wrong/unlock/lock, frozen → 423, cascade delete.
+- **API tests (in repo: `test/api.test.js`)**: Worker in Node with `node:sqlite` as D1, a locally made RSA key served as a stubbed JWKS; covers 401 cases (none/garbage/unknown key/wrong issuer/expired), no family created on visit, family isolation, save, first child creates the family, JWKS cache + rotation, JWKS down → 503. The older, fuller run used a local D1 (English Star schema + seed: 2 families, kids, PIN 1234), Worker run with `CLERK_JWT_KEY` = a locally generated RSA public key, tokens signed with its private key. Covered: no/forged/expired token → 401, family isolation → 404, state save/version/413/400, PIN required/wrong/unlock/lock, frozen → 423, cascade delete.
 - **Browser (Playwright, Chromium):** pages expose `window.__msCurrent` (current problem) so tests can answer. Flows: guest end-to-end on phone + desktop sizes; signed-in flow with a stub `Clerk` served in place of `clerk.browser.js`; scan of all boy-visible text for feminine forms; grade-4 test page.
 
 ## 9. Decisions log (why)
@@ -162,7 +164,7 @@ math-star/
 ## 11. Copy-paste prompt for Claude Code
 
 ```text
-You are continuing work on Math Star (repo yosinv/math-star, live at https://math-star.yosinv.workers.dev),
+You are continuing work on Math Star (repo yosinv/math-star, live at https://math.englishstarkids.com),
 a Hebrew math-practice site on Cloudflare Workers that shares accounts (Clerk), kids (D1) and the parent PIN
 with English Star. Read docs/HANDOFF.md first: it has the architecture, the decisions, what is done,
 what is open, and the deployment traps. Rules: push to main deploys to production; never store a Clerk

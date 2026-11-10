@@ -81,12 +81,17 @@ waits for the save to finish; closing the page sends a last save.
 
 ### Configuration
 
-`wrangler.jsonc` binds English Star's D1 database and holds Clerk's publishable key and Clerk's
-**public** JWT key (`CLERK_JWT_KEY`, from `https://legible-ibex-1897.clerk.accounts.dev/.well-known/jwks.json`).
-The Worker only verifies sign-in tokens with that public key, so **no Clerk secret key is stored on
-Math Star** (English Star keeps the admin secret). If Clerk ever rotates the instance key, sign-in
-fails with 401 until `CLERK_JWT_KEY` is updated (alternatively set the secret `CLERK_SECRET_KEY`
-and remove `CLERK_JWT_KEY`; the Worker then fetches Clerk's keys itself).
+`wrangler.jsonc` binds English Star's D1 database, holds the publishable key of English Star's
+**production** Clerk app, and `CLERK_FAPI_URL` (`https://clerk.englishstarkids.com`). The Worker reads
+Clerk's **public** keys from `CLERK_FAPI_URL/.well-known/jwks.json` (cached for an hour, refetched when
+a token names a new key) and accepts only tokens issued by that URL. So **no Clerk secret key is
+stored on Math Star** (English Star keeps the admin secret), and a Clerk key rotation needs no change.
+`CLERK_JWT_KEY` (a pasted PEM public key) still overrides the fetch if ever needed.
+
+Production Clerk only runs on `englishstarkids.com` and its subdomains, so Math Star is served at
+**https://math.englishstarkids.com** (Workers custom domain, in `wrangler.jsonc` `routes`). The old
+`math-star.yosinv.workers.dev` keeps working on the device only and shows a "move with your progress"
+button that carries device progress over in the link (`public/js/move.js`).
 
 ## Develop
 

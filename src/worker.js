@@ -30,16 +30,62 @@ app.get('/api/health', async (c) => {
   }, database ? 200 : 503);
 });
 
-// Sign-in check. A parent's browser sends its Clerk session token; the Worker verifies it
-// with Clerk's PUBLIC key (CLERK_JWT_KEY) — no admin secret is needed on this Worker.
-// CLERK_SECRET_KEY is accepted as a fallback (the token is then checked against Clerk's published keys).
-const signInConfigured = (env) => Boolean(env.CLERK_JWT_KEY || env.CLERK_SECRET_KEY);
+// Sign-in check. A parent's browser sends its Clerk session token (English Star's production
+// Clerk app). The Worker checks it with Clerk's PUBLIC keys, read from the app's public key list
+// (CLERK_FAPI_URL/.well-known/jwks.json) and cached, so no admin secret is stored here and a
+// Clerk key rotation needs no change. CLERK_JWT_KEY (a PEM public key) overrides the fetch;
+// CLERK_SECRET_KEY still works as a last fallback. The token must come from CLERK_FAPI_URL (iss).
+const signInConfigured = (env) => Boolean(env.CLERK_FAPI_URL || env.CLERK_JWT_KEY || env.CLERK_SECRET_KEY);
+const jwksCache = { url: '', at: 0, keys: new Map() }; // kid -> PEM
+const JWKS_TTL_MS = 60 * 60 * 1000;
+
+function b64urlToBytes(s) {
+  const b = atob(String(s).replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((String(s).length + 3) % 4));
+  return Uint8Array.from(b, (ch) => ch.charCodeAt(0));
+}
+function tokenKid(token) {
+  try { return JSON.parse(new TextDecoder().decode(b64urlToBytes(token.split('.')[0]))).kid || ''; } catch (_) { return ''; }
+}
+async function jwkToPem(jwk) {
+  const key = await crypto.subtle.importKey('jwk', { kty: jwk.kty, n: jwk.n, e: jwk.e, alg: 'RS256', ext: true },
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, true, ['verify']);
+  const der = new Uint8Array(await crypto.subtle.exportKey('spki', key));
+  let bin = ''; for (const x of der) bin += String.fromCharCode(x);
+  return '-----BEGIN PUBLIC KEY-----\n' + btoa(bin).match(/.{1,64}/g).join('\n') + '\n-----END PUBLIC KEY-----';
+}
+async function publicKeyFor(env, kid) {
+  const url = String(env.CLERK_FAPI_URL).replace(/\/+$/, '') + '/.well-known/jwks.json';
+  const fresh = jwksCache.url === url && Date.now() - jwksCache.at < JWKS_TTL_MS;
+  if (fresh && jwksCache.keys.has(kid)) return jwksCache.keys.get(kid);
+  // Unknown kid on a fresh cache: refetch at most once a minute (a rotated key appears at once, junk can't hammer Clerk).
+  if (fresh && Date.now() - jwksCache.at < 60_000) return null;
+  const res = await fetch(url, { headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error('jwks fetch failed: ' + res.status);
+  const { keys = [] } = await res.json();
+  const map = new Map();
+  for (const k of keys) if (k.kty === 'RSA' && k.kid) map.set(k.kid, await jwkToPem(k));
+  Object.assign(jwksCache, { url, at: Date.now(), keys: map });
+  return map.get(kid) || null;
+}
+export const _test = { jwksCache, jwkToPem, resetTables: () => { tablesReady = false; } };
+
 app.use('/api/*', async (c, next) => {
   if (!signInConfigured(c.env)) return c.json({ error: 'sign_in_not_configured' }, 503);
   const header = c.req.header('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   if (!token) return c.json({ error: 'unauthorized' }, 401);
-  const options = c.env.CLERK_JWT_KEY ? { jwtKey: c.env.CLERK_JWT_KEY } : { secretKey: c.env.CLERK_SECRET_KEY };
+  let options;
+  try {
+    if (c.env.CLERK_JWT_KEY) options = { jwtKey: c.env.CLERK_JWT_KEY };
+    else if (c.env.CLERK_FAPI_URL) {
+      const jwtKey = await publicKeyFor(c.env, tokenKid(token));
+      if (!jwtKey) return c.json({ error: 'unauthorized' }, 401);
+      options = { jwtKey };
+    } else options = { secretKey: c.env.CLERK_SECRET_KEY };
+  } catch (error) {
+    console.error('sign-in keys unavailable', error);
+    return c.json({ error: 'service_unavailable' }, 503);
+  }
   let payload = null;
   try {
     // Returns the token's claims and throws when the token is invalid or expired.
@@ -48,6 +94,8 @@ app.use('/api/*', async (c, next) => {
     payload = result?.errors ? null : (result?.data ?? result);
   } catch (_) { payload = null; }
   if (!payload?.sub) return c.json({ error: 'unauthorized' }, 401);
+  const issuer = String(c.env.CLERK_FAPI_URL || '').replace(/\/+$/, '');
+  if (issuer && payload.iss !== issuer) return c.json({ error: 'unauthorized' }, 401);
   c.set('authUserId', payload.sub);
   await next();
 });
@@ -96,19 +144,27 @@ async function ensureTables(c) {
 
 const adminFamilyId = (c) => String(c.env.ADMIN_FAMILY_ID || c.env.LEGACY_OWNER_FAMILY_ID || '');
 
+// The family row is English Star's. Math Star only reads it, and creates one only when a parent
+// adds the first child here. Creating it on a mere visit would be harmful: English Star moves a
+// family from the old sign-in to the new one only while no family exists for the new ID, so an
+// empty family made here first would hide the real one.
+async function getFamily(c) {
+  return c.env.DB.prepare('SELECT id, auth_user_id FROM families WHERE auth_user_id = ?').bind(c.get('authUserId')).first();
+}
 async function getOrCreateFamily(c) {
   const authUserId = c.get('authUserId');
-  let family = await c.env.DB.prepare('SELECT id, auth_user_id FROM families WHERE auth_user_id = ?').bind(authUserId).first();
+  let family = await getFamily(c);
   if (!family) {
     const id = crypto.randomUUID();
     await c.env.DB.prepare('INSERT OR IGNORE INTO families (id, auth_user_id) VALUES (?, ?)').bind(id, authUserId).run();
-    family = await c.env.DB.prepare('SELECT id, auth_user_id FROM families WHERE auth_user_id = ?').bind(authUserId).first();
+    family = await getFamily(c);
   }
   return family;
 }
 
 async function getOwnedChild(c, childId) {
-  const family = await getOrCreateFamily(c);
+  const family = await getFamily(c);
+  if (!family) return null;
   return c.env.DB.prepare(
     `SELECT ch.id, ch.display_name, ch.avatar_object_key, ch.grade_band, ch.family_id,
             m.gender, m.math_grade, m.state_json, m.version, m.updated_at AS math_updated_at
@@ -183,13 +239,15 @@ async function parentGate(c, familyId) {
 }
 
 app.get('/api/parent-pin', async (c) => {
-  const family = await getOrCreateFamily(c);
+  const family = await getFamily(c);
+  if (!family) return c.json({ isSet: false, unlocked: true, unlockMinutes: PIN_UNLOCK_MINUTES });
   const row = await c.env.DB.prepare('SELECT locked_until FROM parent_pins WHERE family_id = ?').bind(family.id).first();
   return c.json({ isSet: Boolean(row), unlocked: row ? await hasValidUnlock(c, family.id) : true, unlockMinutes: PIN_UNLOCK_MINUTES });
 });
 
 app.post('/api/parent-pin/unlock', async (c) => {
-  const family = await getOrCreateFamily(c);
+  const family = await getFamily(c);
+  if (!family) return c.json({ error: 'pin_not_set' }, 409);
   const body = await c.req.json().catch(() => ({}));
   const pin = String(body.pin ?? '');
   const row = await c.env.DB.prepare('SELECT pin_hash, salt, failed_count, locked_until FROM parent_pins WHERE family_id = ?').bind(family.id).first();
@@ -215,7 +273,6 @@ app.post('/api/parent-pin/unlock', async (c) => {
 });
 
 app.post('/api/parent-pin/lock', async (c) => {
-  await getOrCreateFamily(c);
   const token = c.req.header('x-parent-unlock');
   if (token) await c.env.DB.prepare('DELETE FROM parent_unlocks WHERE token_hash = ?').bind(await sha256HexText(token)).run();
   return c.json({ ok: true });
@@ -225,7 +282,10 @@ app.post('/api/parent-pin/lock', async (c) => {
 // Math API
 // ---------------------------------------------------------------------------
 app.get('/api/math/me', async (c) => {
-  const family = await getOrCreateFamily(c);
+  const family = await getFamily(c);
+  // No family yet: either a new parent, or one whose kids are still waiting on English Star's
+  // move to the new sign-in (it happens on their first English Star visit). Don't create one here.
+  if (!family) return c.json({ familyId: null, isFrozen: false, pinSet: false, children: [] });
   const [kids, pin, freeze] = await Promise.all([
     c.env.DB.prepare(
       `SELECT ch.id, ch.display_name, ch.avatar_object_key, ch.grade_band,
