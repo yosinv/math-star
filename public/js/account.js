@@ -15,7 +15,21 @@ const SIGNED_KEY = 'mathStarSignedIn'; // hint only: "a parent signed in on this
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch { /* private mode */ } };
 
-export const wasSignedIn = () => lsGet(SIGNED_KEY) === '1';
+// A kid's own phone, connected with a parent's code at /join (see join.html). The server knows
+// the child from an HttpOnly cookie; this stands in for Clerk so every page works without sign-in.
+export const KID_KEY = 'msKidDevice';
+export function kidDevice() {
+  if (onOldAddress()) return null;
+  try { const v = JSON.parse(lsGet(KID_KEY) || 'null'); return v?.childId ? v : null; } catch { return null; }
+}
+const kidClerk = (info) => ({
+  loaded: true, isSignedIn: true, kidDevice: info, user: null,
+  session: { getToken: () => Promise.resolve('kid-device') },
+  signOut: () => { location.href = '/join.html'; return Promise.resolve(); },
+  addListener: () => () => {}, mountSignIn: () => {}
+});
+
+export const wasSignedIn = () => lsGet(SIGNED_KEY) === '1' || Boolean(kidDevice());
 
 function addScript(src, attrs = {}) {
   return new Promise((resolve, reject) => {
@@ -30,6 +44,8 @@ function addScript(src, attrs = {}) {
 let clerkPromise = null;
 export function loadClerk() {
   if (onOldAddress()) return Promise.reject(new Error('sign-in is on ' + 'math.englishstarkids.com'));
+  const kid = kidDevice();
+  if (kid) return Promise.resolve(kidClerk(kid));
   if (!clerkPromise) {
     clerkPromise = (async () => {
       await Promise.all([
@@ -60,7 +76,13 @@ async function rawFetch(url, options = {}) {
   lastToken = token || lastToken;
   const headers = new Headers(options.headers || {});
   if (token) headers.set('Authorization', 'Bearer ' + token);
-  return fetch(url, { ...options, headers });
+  const res = await fetch(url, { ...options, headers });
+  // A parent disconnected this phone (on English Star's Family page): back to the code screen.
+  if (res.status === 401 && token === 'kid-device') {
+    const d = await res.clone().json().catch(() => ({}));
+    if (d.error === 'kid_device_signed_out') { lsSet(KID_KEY, null); location.href = '/join.html?out=1'; }
+  }
+  return res;
 }
 
 export class ApiError extends Error {

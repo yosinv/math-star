@@ -37,6 +37,7 @@ import { localize } from './js/gender.js';
 import { $, esc, hudHTML, toast, requireProfile } from './js/ui.js';
 import { api } from './js/account.js';
 import { cloudProfile } from './js/session.js';
+import { avatarHTML } from './js/kid-pic.js';
 
 const ctx = await requireProfile();
 const { profile, kid, state, persist, session } = ctx;
@@ -73,7 +74,7 @@ function render() {
   $('#app').innerHTML = `
     <section class="banner" style="background:linear-gradient(135deg,${g.color},#a986ff)">
       <span class="kicker">📈 ההתקדמות של ${esc(profile.name)}</span>
-      <h1>${esc(profile.avatar)} רמה ${playerLevel(kid.xp)}</h1>
+      <h1>${avatarHTML(profile)} רמה ${playerLevel(kid.xp)}</h1>
       <p>${esc(g.label)} · ${kid.answered} תרגילים · ${kid.streak || 0} ימים ברצף</p>
       <div class="deco">%</div>
     </section>

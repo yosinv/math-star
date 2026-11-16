@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive,nosnippet,noimageindex">
+<meta name="theme-color" content="#84d6ff">
+<title>Math Star — חיבור הטלפון שלי</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<style>
+.join{max-width:460px;margin:auto}
+.code{width:100%;margin:14px 0 6px;padding:14px;border-radius:16px;border:3px solid var(--line);font:inherit;font-size:36px;font-weight:900;letter-spacing:10px;text-align:center;direction:ltr;color:var(--ink);background:#fff}
+.code:focus{outline:none;border-color:var(--blue)}
+.status{min-height:26px;margin-top:10px;font-weight:800;text-align:center}
+.status.bad{color:var(--red-dark)}.status.ok{color:var(--green-dark)}
+.join .btn{width:100%;margin-top:10px}
+.big{font-size:56px;text-align:center;margin:4px 0}
+</style>
+</head>
+<body>
+<main class="wrap join">
+  <div class="top"><a class="pill-btn" href="index.html">→ ל-Math Star</a></div>
+  <section class="banner" style="background:linear-gradient(135deg,#16b5a8,#2f8fe0)">
+    <span class="kicker">📱 MATH STAR</span>
+    <h1>מחברים את הטלפון שלי</h1>
+    <p>הטלפון יהיה מחובר לילד או לילדה אחד/ת במשפחה, בלי סיסמה של ההורים.</p>
+  </section>
+
+  <section class="panel" id="form">
+    <div class="big">🔢</div>
+    <p>בקשו מאבא או מאמא קוד חדש: באתר <b class="ltr">englishstarkids.com</b> ← עמוד המשפחה ← <b>📱 Connect a phone</b>. הקלידו אותו כאן.</p>
+    <p class="note">כל קוד עובד פעם אחת ל-10 דקות. גם אם הטלפון כבר מחובר ל-English Star, צריך קוד נוסף בשביל Math Star.</p>
+    <p class="status bad" id="outNote"></p>
+    <input class="code" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000000" aria-label="קוד">
+    <button class="btn green" id="go" type="button">חיבור ⭐</button>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section class="panel hidden" id="done">
+    <div class="big">⭐</div>
+    <h2 id="doneTitle" style="text-align:center"></h2>
+    <p style="text-align:center">הטלפון הזה מחובר. אפשר לשחק!</p>
+    <a class="btn green" href="index.html">▶ לשחק</a>
+    <button class="btn ghost" id="disconnect" type="button">ניתוק הטלפון</button>
+  </section>
+</main>
+
+<script type="module">
+import { onOldAddress, HOME_ORIGIN } from './js/move.js';
+import { KID_KEY } from './js/account.js';
+if (onOldAddress()) location.replace(HOME_ORIGIN + '/join.html');
+const $ = (s) => document.querySelector(s);
+const read = () => { try { return JSON.parse(localStorage.getItem(KID_KEY) || 'null'); } catch { return null; } };
+const forget = () => { try { localStorage.removeItem(KID_KEY); } catch {} };
+
+function showDone(info) {
+  $('#form').classList.add('hidden'); $('#done').classList.remove('hidden');
+  const t = $('#doneTitle'); t.textContent = 'שלום '; const b = document.createElement('bdi'); b.textContent = info.name || ''; t.append(b, '!');
+}
+function showForm() { $('#done').classList.add('hidden'); $('#form').classList.remove('hidden'); setTimeout(() => $('#code').focus(), 50); }
+if (new URLSearchParams(location.search).get('out')) $('#outNote').textContent = 'הטלפון נותק. צריך קוד חדש מההורים.';
+
+(async () => {
+  const info = read();
+  if (!info) return showForm();
+  // Still connected? (A parent may have disconnected this phone.)
+  try {
+    const r = await fetch('/api/math/me', { headers: { Authorization: 'Bearer kid-device' } });
+    if (r.ok) { const d = await r.json(); if (d.kidDevice) { info.name = d.kidDevice.name; return showDone(info); } }
+    if (r.status === 401) { forget(); return showForm(); }
+  } catch {}
+  showDone(info);
+})();
+
+$('#code').addEventListener('input', (e) => { const v = e.target.value.replace(/\D/g, '').slice(0, 6); e.target.value = v; if (v.length === 6) $('#go').click(); });
+$('#go').addEventListener('click', async () => {
+  const code = $('#code').value.replace(/\D/g, ''), st = $('#status');
+  if (code.length !== 6) { st.className = 'status bad'; st.textContent = 'צריך 6 ספרות'; return; }
+  $('#go').disabled = true; st.className = 'status'; st.textContent = '…';
+  try {
+    const r = await fetch('/api/kid-connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      st.className = 'status bad';
+      st.textContent = d.error === 'too_many_tries' ? 'יותר מדי ניסיונות. נסו שוב בעוד 15 דקות.'
+        : d.error === 'wrong_code' ? 'הקוד לא נכון או שעבר הזמן. בקשו קוד חדש.'
+        : d.error === 'account_frozen' ? 'החשבון מושהה. פנו להורים.' : 'משהו השתבש. נסו שוב.';
+      $('#code').value = ''; return;
+    }
+    const info = { childId: d.child.id, name: d.child.name };
+    try { localStorage.setItem(KID_KEY, JSON.stringify(info)); localStorage.setItem('mathStarActiveChildId', info.childId); localStorage.setItem('mathStarSignedIn', '1'); } catch {}
+    st.className = 'status ok'; st.textContent = 'מחובר! ⭐';
+    setTimeout(() => { location.href = 'index.html'; }, 700);
+  } catch { st.className = 'status bad'; st.textContent = 'אין חיבור לאינטרנט. נסו שוב.'; }
+  finally { $('#go').disabled = false; }
+});
+$('#disconnect').addEventListener('click', async () => {
+  if (!confirm('לנתק את הטלפון? צריך יהיה קוד חדש מההורים.')) return;
+  try { await fetch('/api/kid-disconnect', { method: 'POST' }); } catch {}
+  forget(); try { localStorage.removeItem('mathStarSignedIn'); } catch {}
+  showForm();
+});
+</script>
+</body>
+</html>

@@ -5,6 +5,7 @@
 // Pages call openSession() and then use state / active() / persist() the same way in both.
 import { load, save, baseChild, mergeKids, toSharedAvatar } from './store.js';
 export { mergeKids, toSharedAvatar };
+import { avatarEmoji } from './kid-pic.js';
 import { wasSignedIn, signedInClerk, api, makeSaver } from './account.js';
 
 const ACTIVE_KEY = 'mathStarActiveChildId';
@@ -15,7 +16,8 @@ export function cloudProfile(ch) {
   return {
     id: ch.id,
     name: ch.displayName,
-    avatar: ch.avatar || '🧒',
+    avatar: avatarEmoji(ch),
+    character: ch.character || null,
     grade: ch.mathGrade || null,
     gender: ch.gender || null,
     needsSetup: !ch.gender || !ch.mathGrade,

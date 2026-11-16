@@ -20,9 +20,10 @@ import { load, addProfile, missionsToday, AVATARS, genderOf, archiveDevice } fro
 import { $, $$, esc, hudHTML, levelBarHTML, toast } from './js/ui.js';
 import { localize } from './js/gender.js';
 import { openSession, cloudProfile, hasDeviceProgress, mergeKids, toSharedAvatar } from './js/session.js';
-import { mountSignIn, signOut, api, ApiError, parentEmail } from './js/account.js';
+import { mountSignIn, signOut, api, ApiError, parentEmail, kidDevice } from './js/account.js';
 import { onOldAddress, moveLink, unpackState, applyMove, HOME_ORIGIN } from './js/move.js';
 import { save } from './js/store.js';
+import { avatarHTML } from './js/kid-pic.js';
 
 const app = $('#app');
 const params = new URLSearchParams(location.search);
@@ -78,6 +79,11 @@ function movedNotice() {
 // ---------- account bar (shared screens) ----------
 function accountBar() {
   if (onOldAddress()) return movedNotice();
+  const kid = kidDevice();
+  if (kid) {
+    return `<div class="acct"><span>📱 הטלפון של <bdi>${esc(kid.name || '')}</bdi> · ההתקדמות נשמרת בחשבון המשפחה</span>
+      <a class="pill-btn" href="join.html">חיבור הטלפון</a></div>`;
+  }
   if (session?.mode === 'cloud') {
     return `<div class="acct"><span>☁️ מחוברים${parentEmail() ? ' · <span class="ltr">' + esc(parentEmail()) + '</span>' : ''} · ההתקדמות נשמרת בחשבון המשפחה, יחד עם English Star</span>
       <button class="pill-btn" type="button" data-signout>יציאה</button></div>`;
@@ -139,7 +145,7 @@ function importScreen() {
     <section class="panel">
       <table class="t"><tbody>
         ${rows.map((p) => { const k = local.kids[p.id] || {}; const match = cloud.find((c) => norm(c.name) === norm(p.name)); return `
-          <tr><td style="font-size:30px;width:44px">${esc(p.avatar)}</td>
+          <tr><td style="font-size:30px;width:44px">${avatarHTML(p)}</td>
             <td><b>${esc(p.name)}</b><br><small class="sub">${esc(gradeInfo(p.grade).label)} · ⭐ ${k.xp || 0} · ${k.answered || 0} תרגילים</small></td>
             <td style="width:46%"><select class="f" data-row="${p.id}">
               ${cloud.map((c) => `<option value="${c.id}" ${match?.id === c.id ? 'selected' : ''}>${esc(c.avatar)} ${esc(c.name)}</option>`).join('')}
@@ -201,16 +207,17 @@ function picker() {
       <div class="kids">
         ${st.profiles.map((p) => { const k = st.kids[p.id]; return `
           <button class="kid" data-id="${p.id}">
-            <div class="big">${esc(p.avatar)}</div>
+            <div class="big">${avatarHTML(p)}</div>
             <div class="name">${esc(p.name)}</div>
             <div class="meta">${p.grade ? esc(gradeInfo(p.grade).label) : 'עוד לא בחרנו כיתה'}${k ? ` · ⭐ ${k.xp || 0} · 🔥 ${k.streak || 0}` : ''}</div>
           </button>`; }).join('')}
-        <button class="kid add" data-add><div class="big">➕</div><div class="name">${cloud ? 'ילד/ה במשפחה' : 'פרופיל חדש'}</div><div class="meta">${cloud ? 'להורים' : 'ילד או ילדה'}</div></button>
+        ${kidDevice() ? '' : `<button class="kid add" data-add><div class="big">➕</div><div class="name">${cloud ? 'ילד/ה במשפחה' : 'פרופיל חדש'}</div><div class="meta">${cloud ? 'להורים' : 'ילד או ילדה'}</div></button>`}
       </div>
     </section>`;
+  app.insertAdjacentHTML('beforeend', '<p class="acct-sub" style="text-align:center"><a href="privacy.html">🔒 פרטיות ובטיחות</a> · <a href="join.html">📱 חיבור טלפון של ילד/ה</a></p>');
   wireAccountBar();
   $$('.kid[data-id]').forEach((b) => b.onclick = () => openChild(b.dataset.id));
-  $('[data-add]').onclick = () => form();
+  $('[data-add]')?.addEventListener('click', () => form());
 }
 
 // ---------- Add a child ----------
@@ -283,7 +290,7 @@ function setupScreen(p) {
     <div class="top"><a class="pill-btn" href="index.html?pick=1">→ החלפת פרופיל</a></div>
     <section class="banner">
       <span class="kicker">⭐ MATH STAR</span>
-      <h1>${esc(p.avatar)} שלום ${esc(p.name)}!</h1>
+      <h1>${avatarHTML(p)} שלום ${esc(p.name)}!</h1>
       <p>עוד שתי שאלות קטנות ומתחילים.</p>
     </section>
     <section class="panel">
@@ -330,7 +337,7 @@ function world() {
     ${movedNotice()}
     <section class="banner" style="background:linear-gradient(135deg,${g.color},#a986ff)">
       <span class="kicker">⭐ MATH STAR · ${esc(g.label)}</span>
-      <h1>${esc(profile.avatar)} העולם של ${esc(profile.name)}</h1>
+      <h1>${avatarHTML(profile)} העולם של ${esc(profile.name)}</h1>
       <p>אספת ${totalStars} מתוך ${core.length * MAX_LEVEL} כוכבים בכיתה ${esc(g.label.replace('כיתה ', ''))}.</p>
       ${levelBarHTML(kid)}
       <div class="deco">${profile.grade === 'K' ? '1 2 3' : '9×9'}</div>

@@ -4,7 +4,7 @@ project: Math Star
 aliases: [Math Star handoff, math-star]
 tags: [project/math-star, kids, cloudflare, handoff]
 status: live
-updated: 2026-11-10
+updated: 2026-11-16
 repo: https://github.com/yosinv/math-star
 live: https://math.englishstarkids.com
 related: "[[English Star]]"
@@ -69,6 +69,8 @@ math-star/
 - **Guest mode (kept on purpose, Yosi's choice):** without sign-in, profiles + progress stay in the browser (`mathstar.v1`). The first sign-in on a device with progress offers to move it into the account (match by name or add the child), then archives a dated copy and clears the device.
 - **Sign-in check:** the Worker reads Clerk's **public** keys from `CLERK_FAPI_URL/.well-known/jwks.json` (cached 1 h, refetched for a new key id), verifies the session JWT and requires `iss` = `CLERK_FAPI_URL`. **No Clerk secret is stored on Math Star**; key rotation needs no change. `CLERK_JWT_KEY` (pasted PEM) overrides the fetch; `CLERK_SECRET_KEY` remains a last fallback.
 - **Families are created only when a parent adds a child here** — never on a visit. English Star moves a family from the old dev sign-in to the new production ID on the parent's first English Star visit, and only if no family exists yet for the new ID; an empty family made by Math Star first would hide the real one.
+- **Kid phones (same model as English Star):** a parent makes a 6-digit code on English Star's Family page; the child types it at `math.englishstarkids.com/join.html`. Math Star sets its own HttpOnly cookie `ms_kid` (English Star's `es_kid` is host-only and never reaches the subdomain) and writes the device to English Star's `kid_devices` table, so the Family page lists it and its *disconnect* works here too. A kid phone acts as ONE child: `kidDeviceAllowed` in `src/worker.js` allows only `GET /api/math/me` (filtered to that child), `GET/PUT` its own state, `PATCH` its own settings (PIN rules apply), and the PIN endpoints. One code = one app: a phone on both sites needs two codes.
+- **Character pictures:** English Star's `char:<id>` pictures (lion, fox, owl, boy, girl…) are copied in `public/assets/chars/` and drawn by `public/js/kid-pic.js`. The Worker sends `character` next to `avatar`. If English Star adds a character, copy the picture and add it to `CHARS`.
 - **Rules:** a family only sees its own children (404 otherwise); frozen families get 423; saving progress needs no PIN; adding/renaming a child and *changing* boy/girl or grade needs the PIN (the *first* boy/girl + grade choice on a child's first visit is open).
 
 ### API (all need a signed-in parent; `GET /api/health` is public)
@@ -81,6 +83,7 @@ math-star/
 | `PATCH /api/math/children/:id/settings` | gender, mathGrade |
 | `POST /api/math/children` · `PATCH /api/math/children/:id` | add / rename child (PIN) |
 | `GET /api/parent-pin` · `POST /api/parent-pin/unlock` · `POST /api/parent-pin/lock` | shared PIN |
+| `POST /api/kid-connect` · `POST /api/kid-disconnect` | public: kid phone code → `ms_kid` cookie / disconnect |
 
 ## 3. Product rules worth keeping
 
@@ -114,7 +117,9 @@ math-star/
 ## 6. Open — for Claude Code (suggested next work)
 
 - [ ] **Verify live sign-in end to end** (with Yosi present): `GET /api/math/me` returns the real family; pick a child → בן/בת setup → answer → `PUT …/state` saved → reload shows it.
-- [ ] **Move the browser tests into the repo.** The Playwright e2e scripts (guest flow, signed-in flow with a fake Clerk + self-signed JWT, boy-wording scan, grade-4 pages) and the API test (`api.test.mjs`) lived only in the old session's scratch folder. Recreate them under `test/e2e/` and `test/api/` (see §8 for how they worked).
+- [x] **API tests in the repo:** `test/api.test.js` (sign-in, families, kid phones, characters).
+- [ ] **Browser tests, part 2:** `test/e2e/` has guest + kid-phone flows. Still missing from the old set: signed-in flow with a stub Clerk, boy-wording scan, grade-4 pages.
+- [ ] **English Star parity, next batch** (branch `claude/parity-1` did kid phones, character pictures, privacy page): dark theme; Math rounds counted in English Star's Family-page "today's practice" bar (needs a change in English Star); diamonds shared with My Pet (decide first: separate economies today); the kid-phone code working for both sites with one code (needs English Star to set its cookie for `.englishstarkids.com` — a security decision).
 - [ ] **After 15/11:** ask how Alma's test went; consider adding the next unit for ד׳ and moving `g4_frac_of` out of "בהמשך השנה".
 - [x] **Clerk production instance:** moved to English Star's production Clerk, new address `math.englishstarkids.com`, public keys fetched (no rotation watch needed), no empty families, device progress carried from the old address (branch `claude/clerk-production`).
 - [ ] After that merge: confirm the custom domain `math.englishstarkids.com` is attached (Cloudflare → math-star → Settings → Domains & Routes) and `/api/health` there shows `"signIn": true`.
@@ -141,6 +146,7 @@ math-star/
 ## 8. How it was tested (recreate this)
 
 - `npm test` — fuzzes every skill × level (hundreds of problems each, run with `SEED=1..20`), checks no NaN/negatives, unique choices, answer present, and **cross-checks every expression answer with the homework parser's exact-fraction evaluator**; tests adaptivity, homework parsing, `gtext`, verb agreement, `mergeKids`, grade-4 topic coverage.
+- **Browser tests (in repo: `test/e2e/`):** `test/e2e/setup.sh` builds a local D1 from English Star's migrations (sibling checkout `../english-star`) + test family Tal/Noa + kid code 123456; then `npx wrangler dev --local --persist-to .wrangler/e2e-d1 --port 8799` and `node test/e2e/kid-phone.e2e.cjs` / `node test/e2e/guest.e2e.cjs` (screenshots in `test/e2e/out/`). A kid code works once — rerun `setup.sh` before each kid-phone run.
 - **API tests (in repo: `test/api.test.js`)**: Worker in Node with `node:sqlite` as D1, a locally made RSA key served as a stubbed JWKS; covers 401 cases (none/garbage/unknown key/wrong issuer/expired), no family created on visit, family isolation, save, first child creates the family, JWKS cache + rotation, JWKS down → 503. The older, fuller run used a local D1 (English Star schema + seed: 2 families, kids, PIN 1234), Worker run with `CLERK_JWT_KEY` = a locally generated RSA public key, tokens signed with its private key. Covered: no/forged/expired token → 401, family isolation → 404, state save/version/413/400, PIN required/wrong/unlock/lock, frozen → 423, cascade delete.
 - **Browser (Playwright, Chromium):** pages expose `window.__msCurrent` (current problem) so tests can answer. Flows: guest end-to-end on phone + desktop sizes; signed-in flow with a stub `Clerk` served in place of `clerk.browser.js`; scan of all boy-visible text for feminine forms; grade-4 test page.
 

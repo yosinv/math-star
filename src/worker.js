@@ -67,11 +67,124 @@ async function publicKeyFor(env, kid) {
   Object.assign(jwksCache, { url, at: Date.now(), keys: map });
   return map.get(kid) || null;
 }
-export const _test = { jwksCache, jwkToPem, resetTables: () => { tablesReady = false; } };
+export const _test = { jwksCache, jwkToPem, resetTables: () => { tablesReady = false; kidTablesReady = false; } };
+
+// ---------------------------------------------------------------------------
+// Kid phones — the same model as English Star. A parent makes a 6-digit code on English Star's
+// Family page ("Connect a phone"); the child types it at math.englishstarkids.com/join. The phone
+// gets an HttpOnly cookie (ms_kid; English Star's es_kid is not sent to this subdomain) and acts
+// as THAT child only. The device row lives in English Star's kid_devices table, so the Family
+// page lists it and its "disconnect" works here too. Pages send "Authorization: Bearer kid-device".
+// ---------------------------------------------------------------------------
+const KID_COOKIE = 'ms_kid';
+const KID_MAX_FAILS = 10; // wrong codes per address per 15 minutes (shared count with English Star)
+let kidTablesReady = false;
+async function ensureKidTables(c) {
+  if (kidTablesReady) return;
+  // Same definitions as English Star.
+  await c.env.DB.batch([
+    c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS kid_devices (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, family_id TEXT NOT NULL, child_id TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, last_seen_at TEXT, revoked_at TEXT)`),
+    c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS kid_connect_codes (code_hash TEXT PRIMARY KEY, family_id TEXT NOT NULL, child_id TEXT NOT NULL, expires_at TEXT NOT NULL)`),
+    c.env.DB.prepare(`CREATE TABLE IF NOT EXISTS kid_connect_fails (ip_hash TEXT NOT NULL, at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`)
+  ]);
+  kidTablesReady = true;
+}
+function readCookie(c, name) {
+  for (const part of (c.req.header('cookie') || '').split(/;\s*/)) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i) === name) { try { return decodeURIComponent(part.slice(i + 1)); } catch (_) { return null; } }
+  }
+  return null;
+}
+function kidCookie(c, value, maxAge) {
+  const secure = new URL(c.req.url).protocol === 'https:' ? '; Secure' : '';
+  return `${KID_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+}
+const kidCodeHash = (code) => sha256HexText('kid-connect:' + code); // same hashing as English Star
+async function kidDeviceFromCookie(c) {
+  const token = readCookie(c, KID_COOKIE);
+  if (!token || !token.startsWith('kd_') || token.length > 100) return null;
+  await ensureKidTables(c);
+  return await c.env.DB.prepare(
+    `SELECT d.id, d.family_id, d.child_id, d.last_seen_at, f.auth_user_id, ch.display_name
+       FROM kid_devices d
+       JOIN families f ON f.id = d.family_id
+       JOIN children ch ON ch.id = d.child_id AND ch.family_id = d.family_id
+      WHERE d.token_hash = ? AND d.revoked_at IS NULL`
+  ).bind(await sha256HexText(token)).first() || null;
+}
+// What a kid phone may call. Everything else is refused, whatever the PIN state.
+function kidDeviceAllowed(method, path, childId) {
+  if (method === 'GET' && (path === '/api/math/me' || path === '/api/parent-pin')) return true;
+  if (method === 'POST' && (path === '/api/parent-pin/unlock' || path === '/api/parent-pin/lock')) return true;
+  const m = path.match(/^\/api\/math\/children\/([^/]+)\/(state|settings)$/);
+  if (!m || m[1] !== childId) return false;
+  return m[2] === 'state' ? method === 'GET' || method === 'PUT' : method === 'PATCH'; // settings: PIN rules still apply
+}
+
+// Public: the kid phone sends the code.
+app.post('/api/kid-connect', async (c) => {
+  c.header('Cache-Control', 'no-store');
+  try {
+    await ensureKidTables(c);
+    const ipHash = await sha256HexText('kid-ip:' + (c.req.header('cf-connecting-ip') || 'local'));
+    const fails = await c.env.DB.prepare(
+      `SELECT COUNT(*) AS n FROM kid_connect_fails WHERE ip_hash = ? AND at > datetime('now','-15 minutes')`
+    ).bind(ipHash).first();
+    if (Number(fails?.n || 0) >= KID_MAX_FAILS) return c.json({ error: 'too_many_tries' }, 429);
+    const body = await c.req.json().catch(() => ({}));
+    const code = String(body.code || '').replace(/\D/g, '');
+    const row = code.length === 6 ? await c.env.DB.prepare(
+      `DELETE FROM kid_connect_codes WHERE code_hash = ? AND expires_at > datetime('now') RETURNING family_id, child_id`
+    ).bind(await kidCodeHash(code)).first() : null;
+    const child = row ? await c.env.DB.prepare(
+      `SELECT ch.id, ch.display_name, f.is_frozen FROM children ch JOIN families f ON f.id = ch.family_id WHERE ch.id = ? AND ch.family_id = ?`
+    ).bind(row.child_id, row.family_id).first() : null;
+    if (!child) {
+      await c.env.DB.batch([
+        c.env.DB.prepare('INSERT INTO kid_connect_fails (ip_hash) VALUES (?)').bind(ipHash),
+        c.env.DB.prepare(`DELETE FROM kid_connect_fails WHERE at < datetime('now','-1 day')`)
+      ]);
+      return c.json({ error: 'wrong_code' }, 400);
+    }
+    if (child.is_frozen) return c.json({ error: 'account_frozen' }, 423);
+    const token = 'kd_' + b64url(crypto.getRandomValues(new Uint8Array(32)));
+    await c.env.DB.prepare(
+      'INSERT INTO kid_devices (id, token_hash, family_id, child_id, last_seen_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)'
+    ).bind(crypto.randomUUID(), await sha256HexText(token), row.family_id, child.id).run();
+    c.header('Set-Cookie', kidCookie(c, token, 60 * 60 * 24 * 365));
+    return c.json({ ok: true, child: { id: child.id, name: child.display_name } });
+  } catch (error) {
+    console.error('kid connect failed', error);
+    return c.json({ error: 'service_unavailable' }, 503);
+  }
+});
+
+// Public: the kid phone disconnects itself.
+app.post('/api/kid-disconnect', async (c) => {
+  const token = readCookie(c, KID_COOKIE);
+  if (token && token.startsWith('kd_') && token.length <= 100) {
+    try { await ensureKidTables(c); await c.env.DB.prepare('UPDATE kid_devices SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ? AND revoked_at IS NULL').bind(await sha256HexText(token)).run(); } catch (_) {}
+  }
+  c.header('Set-Cookie', kidCookie(c, '', 0));
+  return c.json({ ok: true });
+});
 
 app.use('/api/*', async (c, next) => {
-  if (!signInConfigured(c.env)) return c.json({ error: 'sign_in_not_configured' }, 503);
   const header = c.req.header('authorization') || '';
+  if (header === 'Bearer kid-device') {
+    let device;
+    try { device = await kidDeviceFromCookie(c); } catch (error) { console.error('kid device check failed', error); return c.json({ error: 'service_unavailable' }, 503); }
+    if (!device) return c.json({ error: 'kid_device_signed_out' }, 401);
+    if (!kidDeviceAllowed(c.req.method, c.req.path, device.child_id)) return c.json({ error: 'kid_device_not_allowed' }, 403);
+    c.set('authUserId', device.auth_user_id);
+    c.set('kidDevice', device);
+    if (!device.last_seen_at || Date.now() - sqliteTimeMs(device.last_seen_at) > 3600000) {
+      c.executionCtx?.waitUntil?.(c.env.DB.prepare('UPDATE kid_devices SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?').bind(device.id).run().catch(() => {}));
+    }
+    return next();
+  }
+  if (!signInConfigured(c.env)) return c.json({ error: 'sign_in_not_configured' }, 503);
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   if (!token) return c.json({ error: 'unauthorized' }, 401);
   let options;
@@ -174,6 +287,8 @@ async function getOwnedChild(c, childId) {
 }
 
 const avatarOf = (key) => (typeof key === 'string' && key.startsWith('emoji:') ? key.slice(6) : null);
+// English Star's character pictures ("char:<id>"); the browser draws them (public/js/kid-pic.js).
+const characterOf = (key) => { const m = /^char:([a-z][a-z-]{0,23})$/.exec(String(key || '')); return m ? m[1] : null; };
 const cleanName = (v) => String(v || '').trim().slice(0, 40);
 const cleanGender = (v) => (v === 'm' || v === 'f' ? v : null);
 const cleanGrade = (v) => (MATH_GRADES.has(String(v)) ? String(v) : null);
@@ -191,6 +306,7 @@ function childView(row) {
     id: row.id,
     displayName: row.display_name,
     avatar: avatarOf(row.avatar_object_key),
+    character: characterOf(row.avatar_object_key),
     gradeBand: row.grade_band || null,
     gender: row.gender || null,
     mathGrade: row.math_grade || mathGradeFromBand(row.grade_band),
@@ -286,13 +402,15 @@ app.get('/api/math/me', async (c) => {
   // No family yet: either a new parent, or one whose kids are still waiting on English Star's
   // move to the new sign-in (it happens on their first English Star visit). Don't create one here.
   if (!family) return c.json({ familyId: null, isFrozen: false, pinSet: false, children: [] });
+  const device = c.get('kidDevice') || null;
+  const kidChildId = device ? device.child_id : null; // a kid phone sees only its own child
   const [kids, pin, freeze] = await Promise.all([
     c.env.DB.prepare(
       `SELECT ch.id, ch.display_name, ch.avatar_object_key, ch.grade_band,
               m.gender, m.math_grade, (m.state_json IS NOT NULL) AS state_json, m.updated_at AS math_updated_at
          FROM children ch LEFT JOIN math_child_state m ON m.child_id = ch.id
-        WHERE ch.family_id = ? ORDER BY ch.created_at`
-    ).bind(family.id).all(),
+        WHERE ch.family_id = ? AND (? IS NULL OR ch.id = ?) ORDER BY ch.created_at`
+    ).bind(family.id, kidChildId, kidChildId).all(),
     c.env.DB.prepare('SELECT family_id FROM parent_pins WHERE family_id = ?').bind(family.id).first(),
     c.env.DB.prepare('SELECT is_frozen FROM families WHERE id = ?').bind(family.id).first().catch(() => null)
   ]);
@@ -300,7 +418,8 @@ app.get('/api/math/me', async (c) => {
     familyId: family.id,
     isFrozen: Boolean(freeze?.is_frozen),
     pinSet: Boolean(pin),
-    children: (kids.results || []).map((r) => childView({ ...r, state_json: r.state_json ? 1 : null }))
+    children: (kids.results || []).map((r) => childView({ ...r, state_json: r.state_json ? 1 : null })),
+    kidDevice: device ? { childId: device.child_id, name: device.display_name } : null
   });
 });
 

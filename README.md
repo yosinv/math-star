@@ -79,6 +79,13 @@ waits for the save to finish; closing the page sends a last save.
 | `POST /api/math/children` · `PATCH /api/math/children/:id` | add / rename a child — parent PIN |
 | `GET /api/parent-pin` · `POST /api/parent-pin/unlock` · `/lock` | same PIN as English Star |
 
+### Kid phones and pictures
+
+A parent makes a code on English Star's Family page ("📱 Connect a phone"); the child types it at
+`/join.html`. The phone then acts as that one child (HttpOnly cookie `ms_kid`, device row in English
+Star's `kid_devices`, so English Star's Family page can disconnect it). Children's character pictures
+(`char:<id>` on English Star) are copied in `public/assets/chars/`. Privacy page: `public/privacy.html`.
+
 ### Configuration
 
 `wrangler.jsonc` binds English Star's D1 database, holds the publishable key of English Star's

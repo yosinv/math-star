@@ -1,4 +1,5 @@
 // Shared DOM helpers for Math Star pages.
+import { avatarHTML } from './kid-pic.js';
 import { check, spoken, playerLevel, levelProgress, XP_PER_LEVEL } from './engine.js';
 import { genderOf } from './store.js';
 import { openSession } from './session.js';
@@ -45,7 +46,7 @@ export async function requireProfile() {
 export function hudHTML(profile, kid) {
   const lvl = playerLevel(kid.xp);
   return `
-    <a class="hud-pill me" href="index.html?pick=1" title="החלפת פרופיל"><span class="av">${esc(profile.avatar)}</span>${esc(profile.name)}</a>
+    <a class="hud-pill me" href="index.html?pick=1" title="החלפת פרופיל"><span class="av">${avatarHTML(profile)}</span>${esc(profile.name)}</a>
     <span class="hud-pill lvl-pill" title="רמה">🏅 ${lvl}</span>
     <span class="hud-pill" title="נקודות">⭐ <b data-xp>${kid.xp}</b></span>
     <span class="hud-pill" title="יהלומים">💎 <b data-gems>${kid.gems}</b></span>

@@ -61,8 +61,8 @@ globalThis.fetch = async (url, opts) => {
 };
 const resetJwks = () => { _test.jwksCache.url = ''; _test.jwksCache.at = 0; _test.jwksCache.keys.clear(); jwksCalls = 0; jwksDown = false; };
 
-const call = (DB, path, { tok, method = 'GET', body } = {}) => worker.fetch(new Request('https://math.englishstarkids.com' + path, {
-  method, headers: { ...(tok ? { authorization: 'Bearer ' + tok } : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
+const call = (DB, path, { tok, method = 'GET', body, cookie } = {}) => worker.fetch(new Request('https://math.englishstarkids.com' + path, {
+  method, headers: { ...(tok ? { authorization: 'Bearer ' + tok } : {}), ...(body ? { 'content-type': 'application/json' } : {}), ...(cookie ? { cookie } : {}) },
   body: body ? JSON.stringify(body) : undefined
 }), { ...env, DB }, {});
 
@@ -148,4 +148,79 @@ test('a pasted CLERK_JWT_KEY still works without fetching', async () => {
     { ...env, CLERK_JWT_KEY: pem, DB }, {});
   assert.equal(res.status, 200);
   assert.equal(jwksCalls, 0);
+});
+
+// --- kid phones -------------------------------------------------------------------
+const sha = async (t) => Buffer.from(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t))).toString('hex');
+async function kidFamily() {
+  const DB = fakeD1();
+  DB.raw.exec(`INSERT INTO families (id, auth_user_id) VALUES ('fam1','user_prod_1'), ('fam2','user_prod_2');
+    INSERT INTO children (id, family_id, display_name, avatar_object_key, grade_band) VALUES
+      ('c1','fam1','Tal','char:lion','4'), ('c3','fam1','Noa','emoji:🦊','2'), ('c2','fam2','Gil',NULL,'6');`);
+  // English Star made this code on its Family page (same tables, same hashing).
+  DB.raw.exec(`CREATE TABLE IF NOT EXISTS kid_connect_codes (code_hash TEXT PRIMARY KEY, family_id TEXT NOT NULL, child_id TEXT NOT NULL, expires_at TEXT NOT NULL)`);
+  DB.raw.prepare(`INSERT INTO kid_connect_codes VALUES (?, 'fam1', 'c1', datetime('now','+10 minutes'))`).run(await sha('kid-connect:123456'));
+  DB.raw.prepare(`INSERT INTO kid_connect_codes VALUES (?, 'fam1', 'c1', datetime('now','-1 minutes'))`).run(await sha('kid-connect:999999'));
+  return DB;
+}
+const kidCall = (DB, path, cookie, opts = {}) => worker.fetch(new Request('https://math.englishstarkids.com' + path, {
+  method: opts.method || 'GET',
+  headers: { authorization: 'Bearer kid-device', cookie, ...(opts.body ? { 'content-type': 'application/json' } : {}) },
+  body: opts.body ? JSON.stringify(opts.body) : undefined
+}), { ...env, DB }, {});
+
+test('kid phone: a code connects once, then the phone acts as that one child only', async () => {
+  const DB = await kidFamily();
+  assert.equal((await call(DB, '/api/kid-connect', { method: 'POST', body: { code: '999999' } })).status, 400, 'expired code');
+  const res = await call(DB, '/api/kid-connect', { method: 'POST', body: { code: '123 456' } });
+  assert.equal(res.status, 200);
+  assert.deepEqual((await res.json()).child, { id: 'c1', name: 'Tal' });
+  const setCookie = res.headers.get('set-cookie');
+  assert.match(setCookie, /^ms_kid=kd_[A-Za-z0-9_-]+; Path=\/; HttpOnly; SameSite=Lax; Max-Age=31536000; Secure$/);
+  const cookie = setCookie.split(';')[0];
+  assert.equal((await call(DB, '/api/kid-connect', { method: 'POST', body: { code: '123456' } })).status, 400, 'a code works once');
+
+  const me = await (await kidCall(DB, '/api/math/me', cookie)).json();
+  assert.deepEqual(me.children.map((c) => c.id), ['c1'], 'only its own child, not the sibling');
+  assert.deepEqual(me.kidDevice, { childId: 'c1', name: 'Tal' });
+  assert.equal(me.children[0].character, 'lion');
+
+  assert.equal((await kidCall(DB, '/api/math/children/c1/state', cookie, { method: 'PUT', body: { state: { xp: 5, answered: 1 } } })).status, 200);
+  assert.equal((await kidCall(DB, '/api/math/children/c1/state', cookie)).status, 200);
+  for (const [path, method, body] of [
+    ['/api/math/children/c3/state', 'GET'],
+    ['/api/math/children/c2/state', 'GET'],
+    ['/api/math/children', 'POST', { displayName: 'X' }],
+    ['/api/math/children/c1', 'PATCH', { displayName: 'Renamed' }]
+  ]) assert.equal((await kidCall(DB, path, cookie, { method, body })).status, 403, `${method} ${path} must be refused`);
+  assert.equal(DB.raw.prepare("SELECT display_name FROM children WHERE id = 'c1'").get().display_name, 'Tal');
+});
+
+test('kid phone: disconnected by a parent (or itself) → kid_device_signed_out', async () => {
+  const DB = await kidFamily();
+  const cookie = (await call(DB, '/api/kid-connect', { method: 'POST', body: { code: '123456' } })).headers.get('set-cookie').split(';')[0];
+  DB.raw.exec('UPDATE kid_devices SET revoked_at = CURRENT_TIMESTAMP'); // English Star's Family page "disconnect"
+  const res = await kidCall(DB, '/api/math/me', cookie);
+  assert.equal(res.status, 401);
+  assert.equal((await res.json()).error, 'kid_device_signed_out');
+  assert.equal((await kidCall(DB, '/api/math/me', 'ms_kid=kd_forged')).status, 401);
+  assert.equal((await kidCall(DB, '/api/math/me', '')).status, 401);
+});
+
+test('kid phone: 10 wrong codes from one address → wait 15 minutes; frozen family → 423', async () => {
+  const DB = await kidFamily();
+  for (let i = 0; i < 10; i++) assert.equal((await call(DB, '/api/kid-connect', { method: 'POST', body: { code: '00000' + (i % 10) } })).status, 400);
+  assert.equal((await call(DB, '/api/kid-connect', { method: 'POST', body: { code: '123456' } })).status, 429);
+  const DB2 = await kidFamily();
+  DB2.raw.exec("UPDATE families SET is_frozen = 1 WHERE id = 'fam1'");
+  assert.equal((await call(DB2, '/api/kid-connect', { method: 'POST', body: { code: '123456' } })).status, 423);
+});
+
+test('character pictures from English Star reach Math Star', async () => {
+  resetJwks(); jwksKeys = [prod.jwk];
+  const DB = await kidFamily();
+  const me = await (await call(DB, '/api/math/me', { tok: await token(prod) })).json();
+  const byId = Object.fromEntries(me.children.map((c) => [c.id, c]));
+  assert.equal(byId.c1.character, 'lion'); assert.equal(byId.c1.avatar, null);
+  assert.equal(byId.c3.character, null); assert.equal(byId.c3.avatar, '🦊');
 });
